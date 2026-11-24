@@ -1,0 +1,3 @@
+* @saebyeok-baesong/infra
+/gitops/security/ @saebyeok-baesong/security
+/iam/ @saebyeok-baesong/security @saebyeok-baesong/infra
