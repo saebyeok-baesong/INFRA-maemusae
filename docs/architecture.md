@@ -6,8 +6,8 @@
 terraform/
 ├── bootstrap/            state 버킷, GitHub OIDC 공급자, plan/apply 역할
 ├── modules/
-│   ├── network/          VPC, 서브넷, IGW, 라우팅 테이블, S3 endpoint, NAT 용 EIP, 노드/RDS 보안 그룹
-│   ├── rds/              RDS 1대와 그 경보 (10-base 가 for_each 로 3번 부른다)
+│   ├── network/          VPC, 퍼블릭/노드/DB 서브넷, IGW, 라우팅 테이블, S3 endpoint, NAT 용 EIP, 노드/RDS 보안 그룹
+│   ├── rds/              RDS 1대와 그 경보 (10-base 가 for_each 로 3번 부른다, AZ 는 변수)
 │   ├── eks/              클러스터, 노드그룹, 애드온, Access Entry
 │   ├── pod-identity/     컴포넌트별 IAM 역할
 │   └── platform/         Helm 릴리스 (LB Controller, External Secrets, ExternalDNS, Argo CD)
@@ -24,6 +24,8 @@ terraform/
 | §2.1 VPC (DNS hostnames/support) | 10-base | `modules/network/main.tf` `aws_vpc.this` |
 | §2.1 Public subnet 2a, 태그 `elb=1` | 10-base | `aws_subnet.public` (변수 `public_subnet`) |
 | §2.1 Private subnet 2a, 2c, 태그 `internal-elb=1` | 10-base | `aws_subnet.private` (변수 `private_subnets`) |
+| 문서에 없음. DB 서브넷 2a, 2c | 10-base | `aws_subnet.db` (변수 `db_subnets`) |
+| 문서에 없음. DB 라우팅 테이블 (local 경로만) | 10-base | `aws_route_table.db`, `aws_route_table_association.db` |
 | §2.1 Internet Gateway | 10-base | `aws_internet_gateway.this` |
 | §2.1 NAT Gateway | 20-eks | `envs/dev/20-eks/main.tf` `aws_nat_gateway.this` |
 | §2.1 NAT 용 EIP | 10-base | `modules/network/main.tf` `aws_eip.nat` |
@@ -43,7 +45,10 @@ terraform/
 | §4.1 LB Controller, External Secrets, ExternalDNS, Argo CD | 30-platform | `modules/platform/main.tf` `helm_release.*` |
 | §4.1 나머지 (kube-bench, Alloy, Loki, Grafana, Prometheus, Alertmanager, kube-state-metrics, metrics-server, node-exporter) | gitops 예정 | Argo CD 가 설치한다. Loki 의 IAM 역할만 10-base |
 | §4.2, §4.3 앱과 incident 네임스페이스 | gitops 예정 | |
-| §5.1 RDS x3, db.t4g.micro, 서브넷 그룹 하나, `manage_master_user_password` | 10-base | `envs/dev/10-base/data.tf` `module.rds` (변수 `databases`), `aws_db_subnet_group.this` |
+| §5.1 RDS x3, db.t4g.micro, 서브넷 그룹 하나, `manage_master_user_password` | 10-base | `envs/dev/10-base/data.tf` `module.rds` (변수 `databases`, `rds_availability_zone`), `aws_db_subnet_group.this` (DB 서브넷만) |
+| 문서에 없음. service DB 월간 백업 | 10-base | `envs/dev/10-base/backup.tf` `aws_backup_vault.service`, `aws_backup_plan.service`, `aws_backup_selection.service`, `aws_iam_role.backup` |
+| 문서에 없음. RDS 이벤트 알림 | 10-base | `aws_db_event_subscription.rds` → `aws_sns_topic.alerts` |
+| 문서에 없음. Prometheus 데이터 볼륨 | 10-base | `aws_ebs_volume.prometheus` (변수 `prometheus_volume`). 붙이는 PV 는 gitops 예정 |
 | §5.2 S3 uploads, loki 와 문서에 없는 security-scans (퍼블릭 차단, SSE, 수명 주기) | 10-base | `aws_s3_bucket.this`, `..._public_access_block`, `..._server_side_encryption_configuration`, `..._lifecycle_configuration` |
 | §6 ECR 4개(web, api, migrate, ops) + 수명 주기 | 10-base | `envs/dev/10-base/services.tf` `aws_ecr_repository.this`, `aws_ecr_lifecycle_policy.this` (변수 `ecr_repositories`) |
 | §6 Secrets Manager | 10-base | `aws_secretsmanager_secret.app` (`maemusae/openai`, `maemusae/discord`). DB 접속 정보는 RDS 가 만드는 마스터 비밀 3개 |
@@ -73,7 +78,7 @@ terraform/
 | `pod_identities` | 20-eks, 30-platform | 20-eks 는 연결을 만들고, 30-platform 은 서비스 계정 이름을 Helm values 에 넣는다 |
 | `route53_zone_id` | 30-platform, `eks.sh` | ExternalDNS 영역, down 의 레코드 정리 대기 |
 
-20-eks 는 `cluster_name`, `cluster_endpoint`, `cluster_certificate_authority_data` 를 내고 30-platform 의 Helm 공급자가 읽습니다. 나머지 10-base output(`nat_public_ip`, `ecr_repository_urls`, `ecr_push_role_arns`, `security_scan_bucket`, `security_scan_role_arns`, `bucket_names`, `databases`, `app_secret_names`)은 gitops values 와 다른 레포 CI 설정에 옮겨 적을 값입니다.
+20-eks 는 `cluster_name`, `cluster_endpoint`, `cluster_certificate_authority_data` 를 내고 30-platform 의 Helm 공급자가 읽습니다. 나머지 10-base output(`nat_public_ip`, `ecr_repository_urls`, `ecr_push_role_arns`, `security_scan_bucket`, `security_scan_role_arns`, `bucket_names`, `databases`, `prometheus_volume`, `app_secret_names`)은 gitops values 와 다른 레포 CI 설정에 옮겨 적을 값입니다.
 
 `pod_identities` 의 namespace 와 서비스 계정 이름은 Helm values, gitops 매니페스트와의 계약입니다.
 
@@ -110,6 +115,8 @@ ECR push 역할에 이 권한을 더하지 않고 역할을 따로 둔 이유는
 
 **노드 IMDS 홉 제한은 1 입니다.** Pod 가 노드 자격 증명을 IMDS 로 빌려 쓰지 못하게 합니다. 그래서 LB Controller 에 리전과 VPC ID 를 values 로 넘깁니다.
 
+**RDS 는 DB 전용 서브넷에 있습니다.** DB 서브넷 2a, 2c 는 노드 서브넷과 다른 라우팅 테이블을 쓰고, 그 테이블에는 VPC 안 local 경로만 있습니다. 20-eks 가 NAT 기본 경로를 더하는 곳은 노드용 private 테이블이라 DB 서브넷에는 닿지 않습니다. RDS 는 인터넷으로 나갈 일이 없고, 보안 그룹은 그대로 노드 보안 그룹에서 오는 5432 만 받습니다. RDS 서브넷 그룹은 AZ 2개를 요구해서 2c 서브넷도 그룹에 넣지만, 인스턴스는 `rds_availability_zone`(2a)에 둡니다. 나중에 Multi-AZ 를 켜면 대기 인스턴스가 2c 에 생깁니다.
+
 **RDS 비밀번호는 RDS 가 관리합니다.** `manage_master_user_password = true` 라 비밀번호가 Terraform state 에 남지 않고, Secrets Manager 에 `rds!db-...` 이름으로 생깁니다. External Secrets 가 이 비밀을 읽어 앱에 넘깁니다.
 
 **pgvector 는 마이그레이션이 켭니다.** RDS PostgreSQL 은 pgvector 를 기본으로 담고 있어 파라미터 그룹을 바꿀 필요가 없습니다. OPS 레포의 incident DB 마이그레이션이 `CREATE EXTENSION IF NOT EXISTS vector` 를 실행합니다. 마스터 사용자는 `rds_superuser` 라 확장을 만들 수 있습니다.
@@ -117,6 +124,92 @@ ECR push 역할에 이 권한을 더하지 않고 역할을 따로 둔 이유는
 **ExternalDNS 는 `policy=sync` 입니다.** 기본값 `upsert-only` 는 Service 를 지워도 레코드를 남깁니다. `eks.sh down` 은 Service 를 지운 뒤 ExternalDNS 소유 TXT 레코드가 영역에서 사라질 때까지 기다리고 나서 30-platform 을 지웁니다.
 
 **NLB 경보는 미리 만들 수 없습니다.** NLB 는 Traefik Service 를 보고 LB Controller 가 매일 새로 만들어서, 이름과 ARN 을 Terraform 이 모릅니다. NLB 지표 경보가 필요하면 Prometheus 규칙이나 Alertmanager 로 겁니다.
+
+## service DB 백업과 복구 훈련
+
+RDS 자동 백업(7일, 특정 시점 복구), 삭제 방지, 마지막 스냅샷은 DB 3개 모두 그대로입니다. 여기에 service DB 만 AWS Backup 으로 매월 1일 10:00 KST 에 스냅샷을 받아 볼트 `maemusae-service` 에 90일 보관합니다(변수 `service_backup_retention_days`). 7일보다 오래된 시점으로 돌아가야 할 때 쓰는 복구 지점입니다. 시각은 서울 리전 RDS 기본 백업 창(22:00-06:00 KST)을 피했습니다. 백업 선택은 태그가 아니라 service DB ARN 이라, 다른 DB 에 태그를 붙여도 대상에 들어오지 않습니다.
+
+분기마다 한 번 복구 훈련을 사람이 합니다. 자동화하지 않습니다. 임시 인스턴스는 노드 보안 그룹에서만 닿으므로 코어타임에 합니다.
+
+1. 볼트에서 가장 최근 복구 지점의 스냅샷 ARN 을 찾습니다.
+
+	```sh
+	aws backup list-recovery-points-by-backup-vault --backup-vault-name maemusae-service \
+	  --query 'sort_by(RecoveryPoints,&CreationDate)[-1].RecoveryPointArn' --output text
+	```
+
+2. 그 스냅샷을 임시 인스턴스로 복구합니다. 비밀번호는 새 관리 비밀로 받습니다.
+
+	```sh
+	aws rds restore-db-instance-from-db-snapshot \
+	  --db-instance-identifier maemusae-service-drill \
+	  --db-snapshot-identifier <1번의 ARN> \
+	  --db-instance-class db.t4g.micro \
+	  --db-subnet-group-name maemusae \
+	  --vpc-security-group-ids <rds 보안 그룹 ID> \
+	  --availability-zone ap-northeast-2a \
+	  --no-publicly-accessible --no-multi-az \
+	  --manage-master-user-password
+	aws rds wait db-instance-available --db-instance-identifier maemusae-service-drill
+	```
+
+3. 클러스터 안에서 임시 psql Pod 로 접속해 주요 테이블의 `count(*)` 를 운영 service DB 와 비교합니다. 스냅샷 뒤에 쌓인 행만큼 적은 것은 정상이고, 비어 있거나 테이블이 없으면 실패입니다. 결과와 걸린 시간을 INFRA issue 에 남깁니다.
+4. 임시 인스턴스를 지웁니다. 훈련용이라 마지막 스냅샷을 남기지 않습니다.
+
+	```sh
+	aws rds delete-db-instance --db-instance-identifier maemusae-service-drill \
+	  --skip-final-snapshot --delete-automated-backups
+	```
+
+## Prometheus 데이터 볼륨
+
+클러스터를 매일 지워도 Prometheus 지표가 남도록, 10-base 가 상시 EBS 볼륨 하나를 만듭니다. gp3, 암호화, 기본 20GiB 이고 platform 노드와 같은 2c 에 둡니다(변수 `prometheus_volume`). 20GiB 기준 월 약 2달러(추정)입니다. `az` 는 20-eks `node_groups.platform.az` 와 같아야 합니다. 두 층의 mock 테스트가 같은 값(2c)을 검사해서 한쪽만 바꾸면 테스트가 실패합니다.
+
+볼륨을 Prometheus 에 붙이는 정적 PV 와 PVC 는 gitops 에서 만듭니다. `volumeHandle` 에는 10-base output `prometheus_volume.id` 를 넣습니다.
+
+```yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: prometheus-data
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  csi:
+    driver: ebs.csi.aws.com
+    volumeHandle: <prometheus_volume.id>
+    fsType: ext4
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: topology.kubernetes.io/zone
+              operator: In
+              values: [ap-northeast-2c]
+```
+
+kube-prometheus-stack values 에서는 PVC 가 이 PV 만 잡도록 이름을 지정합니다.
+
+```yaml
+prometheus:
+  prometheusSpec:
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: ""
+          volumeName: prometheus-data
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 20Gi
+```
+
+`eks.sh down` 은 PVC 를 모두 지우지만 Retain PV 는 지워지지 않고 Released 로 남으므로 기다리지 않습니다. reclaimPolicy 가 Delete 인 PV 만 지워질 때까지 기다립니다. 볼륨은 10-base 에 있어 태그가 `Layer=base` 이고, `kubernetes.io/cluster/<이름>` 태그도 없어서 `eks.sh leftovers` 가 잔여물로 잡지 않습니다. EBS CSI 정책은 `ebs.csi.aws.com/cluster` 태그가 있는 볼륨만 지울 수 있는데 이 볼륨에는 그 태그를 달지 않습니다.
+
+삭제 주의. EBS 볼륨에는 RDS 의 삭제 방지 같은 설정이 없습니다. `prometheus_volume.az` 를 바꾸면 볼륨을 새로 만들고, 10-base 를 destroy 하면 볼륨이 지워집니다. 둘 다 plan 에서 `aws_ebs_volume.prometheus` 가 destroy 나 replace 로 보이니 apply 전에 확인합니다. RDS 처럼 지울 때 마지막 스냅샷을 남깁니다(`final_snapshot = true`). 크기를 늘리는 것은 볼륨을 다시 만들지 않습니다.
 
 ## 자원 정리 문서와 다른 점
 
@@ -131,6 +224,9 @@ ECR push 역할에 이 권한을 더하지 않고 역할을 따로 둔 이유는
 | 문서에 없음 | security-scans 버킷, 저장소별 스캔 업로드 역할, `ops-security-ingest` Pod Identity | 위 "보안 스캔 업로드" |
 | §6 CloudWatch NLB 지표 | RDS 경보만 만든다 | 위 "NLB 경보는 미리 만들 수 없습니다" |
 | §6 CloudWatch 로그 그룹 | 만들지 않는다 | 앱과 플랫폼 로그는 Loki 로 간다. 컨트롤 플레인 로그는 매일 지우는 클러스터라 끈다 |
+| 문서에 없음 | DB 전용 서브넷 2a, 2c 와 기본 경로 없는 라우팅 테이블 | 위 "RDS 는 DB 전용 서브넷에 있습니다" |
+| 문서에 없음 | service DB 의 AWS Backup 월간 스냅샷, RDS 이벤트 구독 | 위 "service DB 백업과 복구 훈련", 운영 결정 표 참고 |
+| 문서에 없음 | Prometheus 데이터용 상시 EBS 볼륨 | 위 "Prometheus 데이터 볼륨" |
 | §8 `pod-identity` 모듈이 역할과 연결을 함께 만든다 | 모듈은 역할만, 연결은 20-eks root | 위 "Pod Identity 역할은 10-base 에" |
 | §8 `rds` 모듈을 3번 호출 | `module "rds"` 하나를 `for_each = var.databases` 로 3번 | DB 를 더하고 빼는 일이 변수 한 줄이다 |
 | §8 10-base 에 network 모듈 | network 모듈이 노드 보안 그룹과 RDS 보안 그룹도 만든다 | §2.3 이 네트워크 절에 있고, 두 그룹 모두 상시여야 한다 |
@@ -154,3 +250,9 @@ ECR push 역할에 이 권한을 더하지 않고 역할을 따로 둔 이유는
 | ECR 저장소 | `web`, `api`, `migrate` 는 SERVICE, `ops` 는 OPS 가 push 한다. OPS 는 이미지 하나에 진입점 api, worker, approvals 를 둔다 | OPS 가 이미지를 나누면 `ecr_repositories` 에 줄을 더한다 |
 | 보안 스캔 결과 | S3 `maemusae-security-scans-<계정 ID>` 에 올리고 90일 보관한다. 키 형식과 역할은 위 "보안 스캔 업로드" | 보관 기간이나 올리는 저장소가 바뀔 때 |
 | Redis | ElastiCache 가 아니라 클러스터 안 StatefulSet. Terraform 에 없다. 클러스터를 매일 지우므로 장애 큐 데이터가 그때 사라지는 것을 받아들인다 | 큐 데이터를 하루 넘게 보존해야 할 때 ElastiCache 나 10-base 의 영속 저장소를 검토한다 |
+| DB 서브넷 | RDS 는 DB 전용 서브넷 2a, 2c 에 둔다. 라우팅 테이블에 기본 경로가 없어 NAT 나 IGW 로 나갈 수 없다. 노드 서브넷과 RDS 보안 그룹(노드에서 오는 5432)은 그대로다 | RDS 가 외부(예: S3 내보내기)에 닿아야 할 때 VPC endpoint 를 DB 라우팅 테이블에 더한다 |
+| RDS AZ | RDS 3개를 2a 에 둔다(`rds_availability_zone`). app 노드와 같은 AZ 라 AZ 간 지연과 전송 요금이 없다. 서브넷 그룹은 2a, 2c 를 유지하고 Multi-AZ 는 끈다 | 운영 트래픽을 받거나 2a 장애를 견뎌야 할 때 service DB 부터 Multi-AZ 를 켠다 |
+| service DB 백업 | service DB 만 AWS Backup 으로 매월 1일 10:00 KST 스냅샷, 90일 보관. 선택은 ARN 으로 한다. RDS 자동 백업 7일, 삭제 방지, 마지막 스냅샷은 3개 모두 유지한다. 분기마다 위 절차로 복구 훈련을 한다 | 보관 기간이나 대상 DB 가 바뀔 때. 다른 리전 사본이 필요하면 copy action 을 더한다 |
+| RDS 이벤트 | DB 3개의 availability, failover, failure, low storage, maintenance, notification, recovery 이벤트를 CloudWatch 경보와 같은 alerts 주제로 보낸다. 같은 계정 RDS 는 주제 기본 정책으로 게시할 수 있어 주제 정책을 두지 않는다 | 주제를 암호화하거나 다른 계정 RDS 를 받을 때 주제 정책을 더한다 |
+| Prometheus 데이터 | 10-base 의 상시 EBS(2c, 20GiB)에 남겨 날짜를 넘어 지표를 비교한다. Alertmanager silence 와 Grafana 에서 손으로 고친 내용은 여전히 매일 사라진다. 대시보드는 gitops 코드로 관리한다 | 보존 기간이 늘어 20GiB 가 모자라면 `prometheus_volume.size_gib` 를 늘린다 |
+| incident 배치 (보류) | 첫 클러스터를 올린 뒤 platform 노드의 메모리 여유를 잰다. 여유가 있으면 `incident` namespace 를 platform 노드(2c)로 옮겨 app 노드가 죽어도 장애 대응 봇이 살아 있게 한다. NAT 가 2a 에 있어 2a 전체 장애에는 도움이 되지 않는다. Terraform 변경은 없다 | 첫 클러스터 기동 뒤 측정값으로 정한다 |

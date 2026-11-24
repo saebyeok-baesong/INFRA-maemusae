@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | `terraform/bootstrap/` | state 버킷, GitHub OIDC 공급자, INFRA plan/apply 역할. 계정마다 한 번 적용 | infra |
 | `terraform/modules/` | `network`, `rds`, `eks`, `pod-identity`, `platform`. 아래 층들이 부르는 모듈 | infra |
-| `terraform/envs/dev/10-base/` | 늘 켜 두는 층. VPC, NAT 용 EIP, RDS 3개와 경보, S3, ECR, Secrets Manager, SES, CloudTrail, 예산, Pod Identity 역할, ECR push 역할, 보안 스캔 업로드 역할 | infra |
+| `terraform/envs/dev/10-base/` | 늘 켜 두는 층. VPC, DB 전용 서브넷, NAT 용 EIP, RDS 3개와 경보, RDS 이벤트 구독, service DB 월간 백업(AWS Backup), Prometheus 데이터용 EBS 볼륨, S3, ECR, Secrets Manager, SES, CloudTrail, 예산, Pod Identity 역할, ECR push 역할, 보안 스캔 업로드 역할 | infra |
 | `terraform/envs/dev/20-eks/` | 코어타임 층. NAT Gateway, EKS, 노드그룹 2개, 애드온, Pod Identity 연결 | infra |
 | `terraform/envs/dev/30-platform/` | 코어타임 층. LB Controller, External Secrets, ExternalDNS(도메인이 있을 때), Argo CD | infra |
 | `terraform/eks.sh` | 코어타임 층 올리기, 내리기, 남은 리소스 확인 | infra |
@@ -22,7 +22,7 @@
 
 ```sh
 export TF_VAR_aws_account_id=<12자리 계정 ID>
-export TF_VAR_alert_email=<예산 알림과 RDS 경보를 받을 메일>
+export TF_VAR_alert_email=<예산 알림, RDS 경보와 이벤트를 받을 메일>
 ```
 
 1. bootstrap 을 로컬 state 로 적용합니다. 계정에 GitHub OIDC 공급자가 이미 있으면 `-var create_github_oidc_provider=false` 를 붙입니다.
@@ -38,7 +38,7 @@ export TF_VAR_alert_email=<예산 알림과 RDS 경보를 받을 메일>
 	- Environment `production` 에 승인 규칙, Environment `eks` 에 배포 브랜치 `main` 제한
 	- 변수 `EKS_ADMIN_PRINCIPAL_ARNS` 에 클러스터 관리자 ARN 목록을 JSON 으로. 예: `["arn:aws:iam::<계정>:role/maemusae-gha-apply"]`
 
-3. 10-base 를 적용합니다. 이후에는 `main` 에 merge 하면 `.github/workflows/terraform.yml` 이 `production` 승인 뒤 적용합니다. 적용 뒤 SNS 확인 메일의 링크를 눌러야 RDS 경보가 옵니다.
+3. 10-base 를 적용합니다. 이후에는 `main` 에 merge 하면 `.github/workflows/terraform.yml` 이 `production` 승인 뒤 적용합니다. 적용 뒤 SNS 확인 메일의 링크를 눌러야 RDS 경보와 이벤트가 옵니다.
 
 	```sh
 	terraform -chdir=terraform/envs/dev/10-base init -backend-config=backend.hcl -backend-config="bucket=maemusae-tfstate-$TF_VAR_aws_account_id"
@@ -57,7 +57,7 @@ export TF_VAR_alert_email=<예산 알림과 RDS 경보를 받을 메일>
 	terraform/eks.sh up
 	```
 
-6. 10-base output 을 다른 레포 설정에 옮깁니다. `ecr_push_role_arns` 와 `security_scan_role_arns` 는 각 저장소 CI 가 assume 할 역할, `security_scan_bucket` 은 스캔 결과를 올릴 버킷입니다.
+6. 10-base output 을 다른 레포 설정에 옮깁니다. `ecr_push_role_arns` 와 `security_scan_role_arns` 는 각 저장소 CI 가 assume 할 역할, `security_scan_bucket` 은 스캔 결과를 올릴 버킷입니다. `prometheus_volume.id` 는 gitops 의 Prometheus 정적 PV 에 넣습니다([docs/architecture.md](docs/architecture.md#prometheus-데이터-볼륨)).
 
 bootstrap state 를 S3 로 옮기려면 `terraform/bootstrap/versions.tf` 에 `backend "s3" {}` 를 더하고 key `bootstrap/terraform.tfstate` 로 `init -migrate-state` 합니다.
 
