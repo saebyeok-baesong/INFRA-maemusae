@@ -35,6 +35,17 @@ resource "aws_subnet" "private" {
   }
 }
 
+# DB 전용 서브넷. 노드 서브넷과 라우팅 테이블을 나눠 20-eks 의 NAT 경로가 닿지 않는다
+resource "aws_subnet" "db" {
+  for_each = var.db_subnets
+
+  vpc_id            = aws_vpc.this.id
+  availability_zone = each.key
+  cidr_block        = each.value
+
+  tags = { Name = "${var.name}-db-${each.key}" }
+}
+
 resource "aws_internet_gateway" "this" {
   vpc_id = aws_vpc.this.id
 
@@ -76,6 +87,20 @@ resource "aws_route_table_association" "private" {
 
   subnet_id      = each.value.id
   route_table_id = aws_route_table.private.id
+}
+
+# VPC 안 local 경로만 있다. 기본 경로를 더하지 않는다
+resource "aws_route_table" "db" {
+  vpc_id = aws_vpc.this.id
+
+  tags = { Name = "${var.name}-db" }
+}
+
+resource "aws_route_table_association" "db" {
+  for_each = aws_subnet.db
+
+  subnet_id      = each.value.id
+  route_table_id = aws_route_table.db.id
 }
 
 resource "aws_vpc_endpoint" "s3" {

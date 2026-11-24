@@ -28,6 +28,11 @@ variable "subnet_group_name" {
   type        = string
 }
 
+variable "availability_zone" {
+  description = "인스턴스를 둘 AZ. 서브넷 그룹의 AZ 중 하나"
+  type        = string
+}
+
 variable "security_group_ids" {
   description = "인스턴스에 붙일 보안 그룹"
   type        = list(string)

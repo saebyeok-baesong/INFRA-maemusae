@@ -22,11 +22,21 @@ variable "public_subnet" {
 }
 
 variable "private_subnets" {
-  description = "AZ => 프라이빗 서브넷 CIDR (노드, RDS). EKS 컨트롤 플레인과 RDS 서브넷 그룹이 AZ 2개를 요구한다"
+  description = "AZ => 프라이빗 서브넷 CIDR (노드). EKS 컨트롤 플레인이 AZ 2개를 요구한다"
   type        = map(string)
 
   validation {
     condition     = length(var.private_subnets) >= 2
     error_message = "프라이빗 서브넷은 AZ 2개 이상이어야 한다."
+  }
+}
+
+variable "db_subnets" {
+  description = "AZ => DB 서브넷 CIDR (RDS). RDS 서브넷 그룹이 AZ 2개를 요구한다"
+  type        = map(string)
+
+  validation {
+    condition     = length(var.db_subnets) >= 2
+    error_message = "DB 서브넷은 AZ 2개 이상이어야 한다."
   }
 }

@@ -36,11 +36,31 @@ variable "public_subnet" {
 }
 
 variable "private_subnets" {
-  description = "AZ => 프라이빗 서브넷 CIDR (노드, RDS)"
+  description = "AZ => 프라이빗 서브넷 CIDR (노드)"
   type        = map(string)
   default = {
     "ap-northeast-2a" = "10.50.0.0/20"
     "ap-northeast-2c" = "10.50.16.0/20"
+  }
+}
+
+variable "db_subnets" {
+  description = "AZ => DB 서브넷 CIDR (RDS). 기본 경로가 없는 라우팅 테이블을 쓴다"
+  type        = map(string)
+  default = {
+    "ap-northeast-2a" = "10.50.100.0/24"
+    "ap-northeast-2c" = "10.50.101.0/24"
+  }
+}
+
+variable "rds_availability_zone" {
+  description = "RDS 3개를 둘 AZ. app 노드와 같은 AZ 에 둬 AZ 간 전송 요금을 없앤다"
+  type        = string
+  default     = "ap-northeast-2a"
+
+  validation {
+    condition     = contains(keys(var.db_subnets), var.rds_availability_zone)
+    error_message = "rds_availability_zone 은 db_subnets 의 AZ 중 하나여야 한다."
   }
 }
 
@@ -68,6 +88,12 @@ variable "rds_backup_retention_days" {
   description = "RDS 자동 백업 보존 기간(일)"
   type        = number
   default     = 7
+}
+
+variable "service_backup_retention_days" {
+  description = "AWS Backup 으로 받는 service DB 월간 스냅샷 보존 기간(일)"
+  type        = number
+  default     = 90
 }
 
 variable "rds_alarm_thresholds" {

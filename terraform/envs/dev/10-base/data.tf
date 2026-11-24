@@ -1,6 +1,6 @@
 resource "aws_db_subnet_group" "this" {
   name       = var.name
-  subnet_ids = values(module.network.private_subnet_ids_by_az)
+  subnet_ids = values(module.network.db_subnet_ids_by_az)
 }
 
 module "rds" {
@@ -12,6 +12,7 @@ module "rds" {
   engine_version     = each.value.engine_version
   instance_class     = each.value.instance_class
   allocated_storage  = each.value.allocated_storage
+  availability_zone  = var.rds_availability_zone
   subnet_group_name  = aws_db_subnet_group.this.name
   security_group_ids = [module.network.rds_security_group_id]
 
@@ -19,6 +20,24 @@ module "rds" {
   deletion_protection   = var.rds_deletion_protection
   alarm_topic_arn       = aws_sns_topic.alerts.arn
   alarm_thresholds      = var.rds_alarm_thresholds
+}
+
+# 장애 조치, 저장 공간 부족, 유지 관리 같은 RDS 이벤트를 경보와 같은 주제로 보낸다.
+# 같은 계정의 RDS 는 주제 기본 정책으로 게시할 수 있어 주제 정책을 따로 두지 않는다
+resource "aws_db_event_subscription" "rds" {
+  name        = "${var.name}-rds"
+  sns_topic   = aws_sns_topic.alerts.arn
+  source_type = "db-instance"
+  source_ids  = [for db in module.rds : db.identifier]
+  event_categories = [
+    "availability",
+    "failover",
+    "failure",
+    "low storage",
+    "maintenance",
+    "notification",
+    "recovery",
+  ]
 }
 
 locals {

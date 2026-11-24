@@ -79,6 +79,89 @@ run "no_domain" {
   }
 }
 
+# subnet id, ARN 은 apply 뒤에 정해져서 plan 에서 비교하려면 값을 정해 둔다
+run "rds_wiring" {
+  command = plan
+
+  override_resource {
+    target          = module.network.aws_subnet.db["ap-northeast-2a"]
+    override_during = plan
+    values          = { id = "subnet-db-2a" }
+  }
+
+  override_resource {
+    target          = module.network.aws_subnet.db["ap-northeast-2c"]
+    override_during = plan
+    values          = { id = "subnet-db-2c" }
+  }
+
+  override_resource {
+    target          = module.network.aws_subnet.private["ap-northeast-2a"]
+    override_during = plan
+    values          = { id = "subnet-node-2a" }
+  }
+
+  override_resource {
+    target          = module.network.aws_subnet.private["ap-northeast-2c"]
+    override_during = plan
+    values          = { id = "subnet-node-2c" }
+  }
+
+  override_resource {
+    target          = module.rds["service"].aws_db_instance.this
+    override_during = plan
+    values          = { arn = "arn:aws:rds:ap-northeast-2:123456789012:db:maemusae-service", master_user_secret = [{ secret_arn = "arn:aws:secretsmanager:ap-northeast-2:123456789012:secret:rds!maemusae-service" }] }
+  }
+
+  override_resource {
+    target          = module.rds["security"].aws_db_instance.this
+    override_during = plan
+    values          = { arn = "arn:aws:rds:ap-northeast-2:123456789012:db:maemusae-security", master_user_secret = [{ secret_arn = "arn:aws:secretsmanager:ap-northeast-2:123456789012:secret:rds!maemusae-security" }] }
+  }
+
+  override_resource {
+    target          = module.rds["incident"].aws_db_instance.this
+    override_during = plan
+    values          = { arn = "arn:aws:rds:ap-northeast-2:123456789012:db:maemusae-incident", master_user_secret = [{ secret_arn = "arn:aws:secretsmanager:ap-northeast-2:123456789012:secret:rds!maemusae-incident" }] }
+  }
+
+  override_resource {
+    target          = aws_sns_topic.alerts
+    override_during = plan
+    values          = { arn = "arn:aws:sns:ap-northeast-2:123456789012:maemusae-alerts" }
+  }
+
+  assert {
+    condition     = toset(aws_db_subnet_group.this.subnet_ids) == toset(["subnet-db-2a", "subnet-db-2c"])
+    error_message = "RDS 서브넷 그룹에는 DB 서브넷 2a, 2c 만 들어간다"
+  }
+
+  assert {
+    condition     = alltrue([for db in module.rds : db.availability_zone == "ap-northeast-2a"])
+    error_message = "RDS 3개 모두 2a 에 둔다"
+  }
+
+  assert {
+    condition     = aws_backup_selection.service.resources == toset(["arn:aws:rds:ap-northeast-2:123456789012:db:maemusae-service"])
+    error_message = "AWS Backup 선택에는 service DB ARN 하나만 들어간다"
+  }
+
+  assert {
+    condition     = one(aws_backup_plan.service.rule).lifecycle[0].delete_after == 90
+    error_message = "service DB 월간 스냅샷은 90일 보관한다"
+  }
+
+  assert {
+    condition     = aws_db_event_subscription.rds.source_type == "db-instance" && aws_db_event_subscription.rds.source_ids == toset(["maemusae-incident", "maemusae-security", "maemusae-service"])
+    error_message = "RDS 이벤트 구독은 DB 3개를 모두 받는다"
+  }
+
+  assert {
+    condition     = aws_db_event_subscription.rds.sns_topic == "arn:aws:sns:ap-northeast-2:123456789012:maemusae-alerts"
+    error_message = "RDS 이벤트는 CloudWatch 경보와 같은 alerts 주제로 간다"
+  }
+}
+
 run "scan_upload_prefix" {
   command = plan
 

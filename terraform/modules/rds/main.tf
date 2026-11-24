@@ -13,6 +13,7 @@ resource "aws_db_instance" "this" {
   # RDS 가 비밀번호를 Secrets Manager 에 만들고 회전한다. Terraform state 에 비밀번호가 남지 않는다
   manage_master_user_password = true
 
+  availability_zone      = var.availability_zone
   db_subnet_group_name   = var.subnet_group_name
   vpc_security_group_ids = var.security_group_ids
   publicly_accessible    = false

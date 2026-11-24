@@ -1,3 +1,15 @@
+output "identifier" {
+  value = aws_db_instance.this.identifier
+}
+
+output "arn" {
+  value = aws_db_instance.this.arn
+}
+
+output "availability_zone" {
+  value = aws_db_instance.this.availability_zone
+}
+
 output "address" {
   value = aws_db_instance.this.address
 }

@@ -10,6 +10,10 @@ output "private_subnet_ids_by_az" {
   value = { for az, s in aws_subnet.private : az => s.id }
 }
 
+output "db_subnet_ids_by_az" {
+  value = { for az, s in aws_subnet.db : az => s.id }
+}
+
 output "private_route_table_id" {
   value = aws_route_table.private.id
 }
