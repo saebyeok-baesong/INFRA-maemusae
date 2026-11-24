@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | `terraform/bootstrap/` | state 버킷, GitHub OIDC 공급자, INFRA plan/apply 역할. 계정마다 한 번 적용 | infra |
 | `terraform/modules/` | `network`, `rds`, `eks`, `pod-identity`, `platform`. 아래 층들이 부르는 모듈 | infra |
-| `terraform/envs/dev/10-base/` | 늘 켜 두는 층. VPC, NAT 용 EIP, RDS 3개와 경보, S3, ECR, Secrets Manager, SES, CloudTrail, 예산, Pod Identity 역할, ECR push 역할 | infra |
+| `terraform/envs/dev/10-base/` | 늘 켜 두는 층. VPC, NAT 용 EIP, RDS 3개와 경보, S3, ECR, Secrets Manager, SES, CloudTrail, 예산, Pod Identity 역할, ECR push 역할, 보안 스캔 업로드 역할 | infra |
 | `terraform/envs/dev/20-eks/` | 코어타임 층. NAT Gateway, EKS, 노드그룹 2개, 애드온, Pod Identity 연결 | infra |
 | `terraform/envs/dev/30-platform/` | 코어타임 층. LB Controller, External Secrets, ExternalDNS(도메인이 있을 때), Argo CD | infra |
 | `terraform/eks.sh` | 코어타임 층 올리기, 내리기, 남은 리소스 확인 | infra |
@@ -45,7 +45,7 @@ export TF_VAR_alert_email=<예산 알림과 RDS 경보를 받을 메일>
 	terraform -chdir=terraform/envs/dev/10-base apply
 	```
 
-4. Secrets Manager 비밀에 값을 넣습니다. 10-base 는 빈 비밀(`maemusae/openai`, `maemusae/discord`)만 만들고, 값은 state 에 남지 않게 CLI 로 넣습니다.
+4. Secrets Manager 비밀에 값을 넣습니다. 10-base 는 빈 비밀(`maemusae/openai`, `maemusae/discord`, `maemusae/github-rollback-app`)만 만들고, 값은 state 에 남지 않게 CLI 로 넣습니다. `maemusae/discord` 에는 봇 토큰만 넣습니다. 승인 역할 ID 는 비밀이 아니라 OPS 설정입니다. `maemusae/github-rollback-app` 에는 롤백 App 의 private key 를 넣습니다(아래 GitHub 설정).
 
 	```sh
 	aws secretsmanager put-secret-value --secret-id maemusae/openai --secret-string file://openai.json
@@ -57,7 +57,24 @@ export TF_VAR_alert_email=<예산 알림과 RDS 경보를 받을 메일>
 	terraform/eks.sh up
 	```
 
+6. 10-base output 을 다른 레포 설정에 옮깁니다. `ecr_push_role_arns` 와 `security_scan_role_arns` 는 각 저장소 CI 가 assume 할 역할, `security_scan_bucket` 은 스캔 결과를 올릴 버킷입니다.
+
 bootstrap state 를 S3 로 옮기려면 `terraform/bootstrap/versions.tf` 에 `backend "s3" {}` 를 더하고 key `bootstrap/terraform.tfstate` 로 `init -migrate-state` 합니다.
+
+## GitHub 설정 체크리스트
+
+Terraform 이 만들지 않는 GitHub 쪽 설정입니다. App 과 ruleset 은 아직 만들지 않았습니다. 만들 때 아래대로 맞춥니다.
+
+GitHub App 은 두 개로 나눕니다. 하나는 CI 가 이미지 태그 PR 을 여는 image-PR App, 다른 하나는 클러스터 안 approvals 봇이 롤백 PR 을 열고 merge 하는 롤백 App 입니다. Discord 승인이 PR 리뷰를 대신하므로 롤백 App 만 `main` ruleset 을 우회합니다. 사람 확인 없이 merge 할 수 있는 App 이라 범위를 최소로 묶습니다.
+
+- [ ] 롤백 App 설치 범위는 "Only select repositories" 로 `INFRA-maemusae` 하나만 고릅니다.
+- [ ] 롤백 App 권한은 Contents 읽기·쓰기, Pull requests 읽기·쓰기, Metadata 읽기만 줍니다. Workflows, Administration, Actions, Secrets 권한은 주지 않습니다. webhook 은 끕니다.
+- [ ] `main` ruleset 의 우회 목록에는 롤백 App 하나만 넣고, 대상 브랜치는 `main` 만입니다. 사람 계정이나 다른 App 은 넣지 않습니다. 우회 범위를 넓히려면 보안팀 리뷰를 거칩니다.
+- [ ] 롤백 App private key 는 Secrets Manager `maemusae/github-rollback-app` 에 넣습니다. External Secrets 는 이 값을 `incident` namespace 의 approvals 서비스 계정이 쓰는 Secret 으로만 만듭니다. External Secrets 역할은 `maemusae/*` 를 모두 읽을 수 있으므로, 어느 namespace 에 어떤 비밀을 줄지는 gitops 의 SecretStore, ExternalSecret 에서 제한합니다.
+- [ ] image-PR App key 는 GitHub 조직 secret 에만 두고 AWS 에는 두지 않습니다.
+- [ ] App 권한으로는 파일 단위로 막을 수 없습니다. OPS 의 approvals 봇이 merge 전에 변경이 `gitops/apps/images.yaml` 한 파일의 한 줄인지 확인하고, 아니면 merge 하지 않습니다(OPS 에서 구현 중).
+- [ ] `gitops/apps/images.yaml` 과 `.github/` 는 CODEOWNERS 에서 infra, 보안팀 담당입니다. 사람이 연 PR 은 둘 중 한 팀의 리뷰를 받습니다.
+- [ ] Discord 승인 역할은 처음에 풀스택, 인프라, 보안팀 역할로 두고 나중에 좁힙니다. 역할 ID 는 OPS 설정에 둡니다.
 
 ## 코어타임에 올리고 내리기
 
