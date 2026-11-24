@@ -49,7 +49,7 @@ export TF_VAR_budget_email=<예산 알림 받을 메일>
 	aws secretsmanager put-secret-value --secret-id maemusae/ops --secret-string file://ops-secret.json
 	```
 
-5. cluster 층을 올립니다. 평일 09:30 KST 에 `.github/workflows/eks.yml` 이 자동으로 올리게 하려면 저장소 변수 `EKS_SCHEDULE_ENABLED=true` 를 넣습니다.
+5. cluster 층을 올립니다. 평일 14:00 KST 에 `.github/workflows/eks.yml` 이 자동으로 올리게 하려면 저장소 변수 `EKS_SCHEDULE_ENABLED=true` 를 넣습니다.
 
 	```sh
 	terraform/eks.sh up
@@ -68,7 +68,7 @@ bootstrap state 를 S3 로 옮기려면 `terraform/bootstrap/versions.tf` 에 `b
 | `eks.sh sweep` | 코어타임 밖이면 `down`. 매시 5분에 스케줄이 부릅니다 |
 | `eks.sh leftovers` | `Layer=cluster` 태그, LB Controller 태그, VPC CNI ENI 가 남았는지 확인 |
 
-코어타임 기본값은 평일 09:30 부터 18:00 까지(KST)입니다. `UP_AT`, `CORE_END` 환경 변수로 바꿉니다. 저장소 변수 `EKS_HOLD_UNTIL` 에 `2026-11-24T21:00` 처럼 오늘 날짜와 시각을 넣으면 그날만 `HOLD_MAX`(기본 22:00)까지 늘어납니다.
+코어타임 기본값은 평일 14:00 부터 17:30 까지(KST)입니다. `UP_AT`, `CORE_END` 환경 변수로 바꿉니다. 저장소 변수 `EKS_HOLD_UNTIL` 에 `2026-11-24T21:00` 처럼 오늘 날짜와 시각을 넣으면 그날만 `HOLD_MAX`(기본 22:00)까지 늘어납니다.
 
 `down` 은 cluster 층을 지우기 전에 LoadBalancer Service 를 지웁니다. NLB 는 LB Controller 가 만들어서, Controller 가 살아 있을 때 Service 를 지워야 NLB 도 지워집니다.
 
