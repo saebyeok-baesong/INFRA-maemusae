@@ -88,12 +88,10 @@ variable "ecr_repositories" {
   description = "ECR 저장소 이름 => 그 저장소에 push 할 GitHub 저장소 (owner/repo). 줄을 지우면 저장소와 push 권한이 같이 빠진다"
   type        = map(string)
   default = {
-    web       = "saebyeok-baesong/SERVICE-maemusae"
-    api       = "saebyeok-baesong/SERVICE-maemusae"
-    migrate   = "saebyeok-baesong/SERVICE-maemusae"
-    webhook   = "saebyeok-baesong/OPS-maemusae"
-    worker    = "saebyeok-baesong/OPS-maemusae"
-    approvals = "saebyeok-baesong/OPS-maemusae"
+    web     = "saebyeok-baesong/SERVICE-maemusae"
+    api     = "saebyeok-baesong/SERVICE-maemusae"
+    migrate = "saebyeok-baesong/SERVICE-maemusae"
+    ops     = "saebyeok-baesong/OPS-maemusae"
   }
 }
 
@@ -112,7 +110,23 @@ variable "ecr_push_ref" {
 variable "app_secrets" {
   description = "Secrets Manager 비밀. <name>/<항목> 이름으로 만든다. 값은 사람이 CLI 로 넣고 External Secrets 가 클러스터로 옮긴다"
   type        = list(string)
-  default     = ["openai", "discord"]
+  default     = ["openai", "discord", "github-rollback-app"]
+}
+
+variable "security_scan_repositories" {
+  description = "보안 스캔 결과를 security-scans 버킷의 <저장소 이름>/ 아래에 올릴 GitHub 저장소 (owner/repo)"
+  type        = list(string)
+  default = [
+    "saebyeok-baesong/SERVICE-maemusae",
+    "saebyeok-baesong/OPS-maemusae",
+    "saebyeok-baesong/INFRA-maemusae",
+  ]
+}
+
+variable "security_scan_retention_days" {
+  description = "security-scans 버킷 객체 보존 기간(일)"
+  type        = number
+  default     = 90
 }
 
 variable "loki_retention_days" {

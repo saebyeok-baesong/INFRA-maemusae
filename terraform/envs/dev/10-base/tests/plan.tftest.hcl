@@ -24,8 +24,8 @@ run "no_domain" {
   }
 
   assert {
-    condition     = keys(aws_ecr_repository.this) == ["api", "approvals", "migrate", "web", "webhook", "worker"]
-    error_message = "ECR 저장소 6개"
+    condition     = keys(aws_ecr_repository.this) == ["api", "migrate", "ops", "web"]
+    error_message = "ECR 저장소는 SERVICE 의 web, api, migrate 와 OPS 이미지 하나(ops)"
   }
 
   assert {
@@ -39,7 +39,7 @@ run "no_domain" {
   }
 
   assert {
-    condition     = keys(module.pod_identity.identities) == ["api", "aws-load-balancer-controller", "ebs-csi", "external-secrets", "loki"]
+    condition     = keys(module.pod_identity.identities) == ["api", "aws-load-balancer-controller", "ebs-csi", "external-secrets", "loki", "ops-security-ingest"]
     error_message = "Route53 영역이 없으면 ExternalDNS 역할을 만들지 않는다"
   }
 
@@ -49,18 +49,54 @@ run "no_domain" {
   }
 
   assert {
-    condition     = keys(aws_s3_bucket_lifecycle_configuration.this) == ["cloudtrail", "loki"]
+    condition     = keys(aws_s3_bucket_lifecycle_configuration.this) == ["cloudtrail", "loki", "security-scans"]
     error_message = "uploads 버킷은 만료 규칙이 없다"
   }
 
   assert {
-    condition     = keys(aws_s3_bucket_server_side_encryption_configuration.this) == ["cloudtrail", "loki", "uploads"]
-    error_message = "모든 버킷에 SSE"
+    condition     = keys(aws_s3_bucket_server_side_encryption_configuration.this) == ["cloudtrail", "loki", "security-scans", "uploads"] && keys(aws_s3_bucket_public_access_block.this) == keys(aws_s3_bucket.this)
+    error_message = "모든 버킷에 SSE 와 퍼블릭 차단"
   }
 
   assert {
-    condition     = aws_secretsmanager_secret.app["openai"].name == "maemusae/openai"
-    error_message = "앱 비밀은 External Secrets 가 읽는 maemusae/ 아래에 만든다"
+    condition     = aws_s3_bucket.this["security-scans"].bucket == "maemusae-security-scans-123456789012" && one(aws_s3_bucket_lifecycle_configuration.this["security-scans"].rule).expiration[0].days == 90
+    error_message = "스캔 버킷은 OPS, SPEC 과 맞춘 이름이고 90일 뒤 지운다"
+  }
+
+  assert {
+    condition     = module.pod_identity.identities["ops-security-ingest"].namespace == "incident" && module.pod_identity.identities["ops-security-ingest"].service_account == "ops-security-ingest"
+    error_message = "스캔 수집기는 incident/ops-security-ingest"
+  }
+
+  assert {
+    condition     = keys(aws_iam_role.scan_upload) == ["saebyeok-baesong/INFRA-maemusae", "saebyeok-baesong/OPS-maemusae", "saebyeok-baesong/SERVICE-maemusae"]
+    error_message = "스캔 업로드 역할은 SERVICE, OPS, INFRA 마다 하나"
+  }
+
+  assert {
+    condition     = aws_secretsmanager_secret.app["openai"].name == "maemusae/openai" && aws_secretsmanager_secret.app["github-rollback-app"].name == "maemusae/github-rollback-app"
+    error_message = "앱 비밀과 롤백 App 키는 External Secrets 가 읽는 maemusae/ 아래에 만든다"
+  }
+}
+
+run "scan_upload_prefix" {
+  command = plan
+
+  override_resource {
+    target          = aws_s3_bucket.this["security-scans"]
+    override_during = plan
+    values          = { arn = "arn:aws:s3:::maemusae-security-scans-123456789012" }
+  }
+
+  assert {
+    condition = alltrue([
+      for repo, p in aws_iam_role_policy.scan_upload : jsondecode(p.policy).Statement == [{
+        Effect   = "Allow"
+        Action   = ["s3:PutObject"]
+        Resource = "arn:aws:s3:::maemusae-security-scans-123456789012/${split("/", repo)[1]}/*"
+      }]
+    ])
+    error_message = "저장소마다 자기 <저장소 이름>/ 아래에만 PutObject"
   }
 }
 

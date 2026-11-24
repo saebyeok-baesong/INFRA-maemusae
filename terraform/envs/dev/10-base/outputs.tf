@@ -54,6 +54,16 @@ output "ecr_push_role_arns" {
   value       = { for k, r in aws_iam_role.ecr_push : k => r.arn }
 }
 
+output "security_scan_bucket" {
+  description = "스캔 결과 버킷. 키는 <저장소 이름>/<도구>/<YYYY-MM-DD>/<github_run_id>.json"
+  value       = aws_s3_bucket.this["security-scans"].bucket
+}
+
+output "security_scan_role_arns" {
+  description = "GitHub 저장소 => 스캔 결과를 올릴 때 assume 할 역할 ARN"
+  value       = { for k, r in aws_iam_role.scan_upload : k => r.arn }
+}
+
 output "bucket_names" {
   value = { for k, b in aws_s3_bucket.this : k => b.bucket }
 }

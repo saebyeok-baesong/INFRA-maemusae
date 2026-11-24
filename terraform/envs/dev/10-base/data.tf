@@ -27,6 +27,8 @@ locals {
     uploads    = { force_destroy = false, expire_days = null }
     loki       = { force_destroy = true, expire_days = var.loki_retention_days }
     cloudtrail = { force_destroy = false, expire_days = var.cloudtrail_retention_days }
+    # SERVICE, OPS, INFRA CI 가 올리고 incident 의 ops-security-ingest 가 읽는다
+    security-scans = { force_destroy = false, expire_days = var.security_scan_retention_days }
   }
 }
 
