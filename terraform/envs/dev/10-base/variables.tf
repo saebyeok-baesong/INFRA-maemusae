@@ -110,6 +110,20 @@ variable "rds_alarm_thresholds" {
   }
 }
 
+variable "prometheus_volume" {
+  description = "Prometheus 데이터용 상시 EBS. az 는 20-eks node_groups.platform.az 와 같아야 한다"
+  type = object({
+    az       = string
+    size_gib = number
+  })
+  default = { az = "ap-northeast-2c", size_gib = 20 }
+
+  validation {
+    condition     = contains(keys(var.private_subnets), var.prometheus_volume.az)
+    error_message = "prometheus_volume.az 는 노드 서브넷(private_subnets)의 AZ 중 하나여야 한다."
+  }
+}
+
 variable "ecr_repositories" {
   description = "ECR 저장소 이름 => 그 저장소에 push 할 GitHub 저장소 (owner/repo). 줄을 지우면 저장소와 push 권한이 같이 빠진다"
   type        = map(string)

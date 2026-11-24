@@ -56,6 +56,11 @@ run "default" {
   }
 
   assert {
+    condition     = var.node_groups["platform"].az == "ap-northeast-2c"
+    error_message = "platform 노드는 10-base 의 Prometheus 볼륨과 같은 2c 에 둔다. 한쪽을 바꾸면 10-base 테스트의 같은 값도 바꾼다"
+  }
+
+  assert {
     condition     = module.eks.node_groups["app"].subnet_ids == toset(["subnet-priv-a"]) && module.eks.node_groups["platform"].subnet_ids == toset(["subnet-priv-c"])
     error_message = "app 은 2a, platform 은 2c"
   }

@@ -40,6 +40,21 @@ resource "aws_db_event_subscription" "rds" {
   ]
 }
 
+# Prometheus TSDB 를 클러스터보다 오래 남긴다. gitops 의 정적 PV(Retain)가 이 볼륨을 platform 노드에 붙인다.
+# ebs.csi.aws.com/cluster 태그를 달지 않는다. EBS CSI 정책은 그 태그가 있는 볼륨만 지울 수 있다
+resource "aws_ebs_volume" "prometheus" {
+  availability_zone = var.prometheus_volume.az
+  size              = var.prometheus_volume.size_gib
+  type              = "gp3"
+  encrypted         = true
+  final_snapshot    = true
+
+  tags = {
+    Name    = "${var.name}-prometheus"
+    Purpose = "prometheus-tsdb"
+  }
+}
+
 locals {
   # expire_days = null 이면 객체를 지우지 않는다
   buckets = {

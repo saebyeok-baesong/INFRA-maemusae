@@ -127,9 +127,12 @@ drain() {
   kubectl get svc -A -o json |
     jq -r '.items[] | select(.spec.type == "LoadBalancer") | "\(.metadata.namespace) \(.metadata.name)"' |
     while read -r ns svc; do kubectl delete svc -n "$ns" "$svc" --timeout=5m; done
-  # StatefulSet 의 PVC 는 Argo CD 가 지우지 않는다. EBS CSI 가 볼륨을 지울 때까지 PV 를 기다린다
+  # StatefulSet 의 PVC 는 Argo CD 가 지우지 않는다. EBS CSI 가 볼륨을 지울 때까지 PV 를 기다린다.
+  # Retain PV(10-base 의 Prometheus 볼륨)는 지워지지 않고 Released 로 남으므로 기다리지 않는다
   kubectl delete pvc --all -A --timeout=10m
-  [[ -z "$(kubectl get pv -o name)" ]] || kubectl wait --for=delete pv --all --timeout=10m
+  local pvs
+  pvs="$(kubectl get pv -o json | jq -r '.items[] | select(.spec.persistentVolumeReclaimPolicy == "Delete") | "pv/\(.metadata.name)"')"
+  [[ -z "$pvs" ]] || kubectl wait --for=delete $pvs --timeout=10m
   wait_dns_records
 }
 

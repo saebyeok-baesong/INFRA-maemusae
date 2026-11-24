@@ -162,6 +162,25 @@ run "rds_wiring" {
   }
 }
 
+run "prometheus_volume" {
+  command = plan
+
+  assert {
+    condition     = aws_ebs_volume.prometheus.availability_zone == "ap-northeast-2c"
+    error_message = "Prometheus 볼륨은 20-eks 의 platform 노드그룹과 같은 2c 에 둔다. 한쪽을 바꾸면 20-eks 테스트의 같은 값도 바꾼다"
+  }
+
+  assert {
+    condition     = aws_ebs_volume.prometheus.encrypted && aws_ebs_volume.prometheus.type == "gp3" && aws_ebs_volume.prometheus.final_snapshot
+    error_message = "Prometheus 볼륨은 암호화한 gp3 이고 지울 때 마지막 스냅샷을 남긴다"
+  }
+
+  assert {
+    condition     = !contains(keys(aws_ebs_volume.prometheus.tags), "ebs.csi.aws.com/cluster")
+    error_message = "EBS CSI 가 지울 수 있는 태그를 달지 않는다"
+  }
+}
+
 run "scan_upload_prefix" {
   command = plan
 

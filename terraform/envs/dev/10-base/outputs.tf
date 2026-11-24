@@ -80,6 +80,14 @@ output "databases" {
   }
 }
 
+output "prometheus_volume" {
+  description = "gitops 의 Prometheus 정적 PV 에 넣을 볼륨 ID 와 AZ"
+  value = {
+    id = aws_ebs_volume.prometheus.id
+    az = aws_ebs_volume.prometheus.availability_zone
+  }
+}
+
 output "app_secret_names" {
   value = [for s in aws_secretsmanager_secret.app : s.name]
 }
