@@ -1,0 +1,141 @@
+name: terraform
+
+on:
+  pull_request:
+    paths:
+      - "terraform/**"
+      - "iam/**"
+      - ".github/workflows/terraform.yml"
+  push:
+    branches: [main]
+    paths:
+      - "terraform/**"
+      - "iam/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: "1.17.1"
+  TFLINT_VERSION: "v0.65.0"
+  TF_IN_AUTOMATION: "true"
+  # 공개 저장소라 계정 ID 는 저장소 변수로만 넘긴다
+  TF_VAR_aws_account_id: ${{ vars.AWS_ACCOUNT_ID }}
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - run: terraform fmt -check -recursive -diff terraform
+
+  validate:
+    name: validate (${{ matrix.dir }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: [bootstrap, base, cluster]
+    defaults:
+      run:
+        working-directory: terraform/${{ matrix.dir }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
+        with:
+          tflint_version: ${{ env.TFLINT_VERSION }}
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate -no-color
+      - name: terraform test (mock provider, AWS 접속 없음)
+        if: hashFiles(format('terraform/{0}/tests/*.tftest.hcl', matrix.dir)) != ''
+        run: terraform test -no-color
+      - name: tflint
+        # 플러그인 다운로드를 인증 요청으로 보내 GitHub API 비인증 한도에 걸리지 않게 한다
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          tflint --init --config "$GITHUB_WORKSPACE/terraform/.tflint.hcl"
+          tflint --config "$GITHUB_WORKSPACE/terraform/.tflint.hcl" --format compact
+
+  # cluster 층은 eks.yml 이 코어타임에 올리고 내린다. 여기서는 base 만 plan/apply 한다
+  plan:
+    needs: [fmt, validate]
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: terraform/base
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Skip if AWS is not configured
+        id: guard
+        run: |
+          if [ -z "${{ vars.AWS_PLAN_ROLE_ARN }}" ] || [ -z "${{ vars.AWS_ACCOUNT_ID }}" ]; then
+            echo "::notice::AWS_PLAN_ROLE_ARN 또는 AWS_ACCOUNT_ID 가 없어 plan 을 건너뜁니다."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        if: steps.guard.outputs.skip != 'true'
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ap-northeast-2
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        if: steps.guard.outputs.skip != 'true'
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - if: steps.guard.outputs.skip != 'true'
+        run: terraform init -input=false -backend-config=backend.hcl -backend-config="bucket=maemusae-tfstate-$TF_VAR_aws_account_id"
+      - if: steps.guard.outputs.skip != 'true'
+        env:
+          TF_VAR_budget_email: ${{ secrets.BUDGET_EMAIL }}
+        run: terraform plan -input=false -lock=false -no-color
+
+  apply:
+    needs: [fmt, validate]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # bootstrap 의 apply 역할은 이 Environment 주체만 믿는다. 승인 규칙을 Environment 에 건다
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: terraform/base
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Skip if AWS is not configured
+        id: guard
+        run: |
+          if [ -z "${{ vars.AWS_APPLY_ROLE_ARN }}" ] || [ -z "${{ vars.AWS_ACCOUNT_ID }}" ]; then
+            echo "::notice::AWS_APPLY_ROLE_ARN 또는 AWS_ACCOUNT_ID 가 없어 apply 를 건너뜁니다."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        if: steps.guard.outputs.skip != 'true'
+        with:
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          aws-region: ap-northeast-2
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        if: steps.guard.outputs.skip != 'true'
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - if: steps.guard.outputs.skip != 'true'
+        run: terraform init -input=false -backend-config=backend.hcl -backend-config="bucket=maemusae-tfstate-$TF_VAR_aws_account_id"
+      - if: steps.guard.outputs.skip != 'true'
+        env:
+          TF_VAR_budget_email: ${{ secrets.BUDGET_EMAIL }}
+        run: terraform apply -input=false -auto-approve -lock-timeout=5m
