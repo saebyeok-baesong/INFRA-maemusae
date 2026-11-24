@@ -1,6 +1,11 @@
 variable "aws_account_id" {
   description = "적용할 AWS 계정 ID. 공개 저장소라 파일에 두지 않고 TF_VAR_aws_account_id 로 넘긴다"
   type        = string
+
+  validation {
+    condition     = can(regex("^[0-9]{12}$", var.aws_account_id))
+    error_message = "aws_account_id 는 12자리 숫자여야 한다."
+  }
 }
 
 variable "region" {
