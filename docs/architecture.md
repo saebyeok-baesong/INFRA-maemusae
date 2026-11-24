@@ -46,7 +46,6 @@ terraform/
 | §4.1 나머지 (kube-bench, Alloy, Loki, Grafana, Prometheus, Alertmanager, kube-state-metrics, metrics-server, node-exporter) | gitops 예정 | Argo CD 가 설치한다. Loki 의 IAM 역할만 10-base |
 | §4.2, §4.3 앱과 incident 네임스페이스 | gitops 예정 | |
 | §5.1 RDS x3, db.t4g.micro, 서브넷 그룹 하나, `manage_master_user_password` | 10-base | `envs/dev/10-base/data.tf` `module.rds` (변수 `databases`, `rds_availability_zone`), `aws_db_subnet_group.this` (DB 서브넷만) |
-| 문서에 없음. service DB 월간 백업 | 10-base | `envs/dev/10-base/backup.tf` `aws_backup_vault.service`, `aws_backup_plan.service`, `aws_backup_selection.service`, `aws_iam_role.backup` |
 | 문서에 없음. RDS 이벤트 알림 | 10-base | `aws_db_event_subscription.rds` → `aws_sns_topic.alerts` |
 | 문서에 없음. Prometheus 데이터 볼륨 | 10-base | `aws_ebs_volume.prometheus` (변수 `prometheus_volume`). 붙이는 PV 는 gitops 예정 |
 | §5.2 S3 uploads, loki 와 문서에 없는 security-scans (퍼블릭 차단, SSE, 수명 주기) | 10-base | `aws_s3_bucket.this`, `..._public_access_block`, `..._server_side_encryption_configuration`, `..._lifecycle_configuration` |
@@ -125,42 +124,6 @@ ECR push 역할에 이 권한을 더하지 않고 역할을 따로 둔 이유는
 
 **NLB 경보는 미리 만들 수 없습니다.** NLB 는 Traefik Service 를 보고 LB Controller 가 매일 새로 만들어서, 이름과 ARN 을 Terraform 이 모릅니다. NLB 지표 경보가 필요하면 Prometheus 규칙이나 Alertmanager 로 겁니다.
 
-## service DB 백업과 복구 훈련
-
-RDS 자동 백업(7일, 특정 시점 복구), 삭제 방지, 마지막 스냅샷은 DB 3개 모두 그대로입니다. 여기에 service DB 만 AWS Backup 으로 매월 1일 10:00 KST 에 스냅샷을 받아 볼트 `maemusae-service` 에 90일 보관합니다(변수 `service_backup_retention_days`). 7일보다 오래된 시점으로 돌아가야 할 때 쓰는 복구 지점입니다. 시각은 서울 리전 RDS 기본 백업 창(22:00-06:00 KST)을 피했습니다. 백업 선택은 태그가 아니라 service DB ARN 이라, 다른 DB 에 태그를 붙여도 대상에 들어오지 않습니다.
-
-분기마다 한 번 복구 훈련을 사람이 합니다. 자동화하지 않습니다. 임시 인스턴스는 노드 보안 그룹에서만 닿으므로 코어타임에 합니다.
-
-1. 볼트에서 가장 최근 복구 지점의 스냅샷 ARN 을 찾습니다.
-
-	```sh
-	aws backup list-recovery-points-by-backup-vault --backup-vault-name maemusae-service \
-	  --query 'sort_by(RecoveryPoints,&CreationDate)[-1].RecoveryPointArn' --output text
-	```
-
-2. 그 스냅샷을 임시 인스턴스로 복구합니다. 비밀번호는 새 관리 비밀로 받습니다.
-
-	```sh
-	aws rds restore-db-instance-from-db-snapshot \
-	  --db-instance-identifier maemusae-service-drill \
-	  --db-snapshot-identifier <1번의 ARN> \
-	  --db-instance-class db.t4g.micro \
-	  --db-subnet-group-name maemusae \
-	  --vpc-security-group-ids <rds 보안 그룹 ID> \
-	  --availability-zone ap-northeast-2a \
-	  --no-publicly-accessible --no-multi-az \
-	  --manage-master-user-password
-	aws rds wait db-instance-available --db-instance-identifier maemusae-service-drill
-	```
-
-3. 클러스터 안에서 임시 psql Pod 로 접속해 주요 테이블의 `count(*)` 를 운영 service DB 와 비교합니다. 스냅샷 뒤에 쌓인 행만큼 적은 것은 정상이고, 비어 있거나 테이블이 없으면 실패입니다. 결과와 걸린 시간을 INFRA issue 에 남깁니다.
-4. 임시 인스턴스를 지웁니다. 훈련용이라 마지막 스냅샷을 남기지 않습니다.
-
-	```sh
-	aws rds delete-db-instance --db-instance-identifier maemusae-service-drill \
-	  --skip-final-snapshot --delete-automated-backups
-	```
-
 ## Prometheus 데이터 볼륨
 
 클러스터를 매일 지워도 Prometheus 지표가 남도록, 10-base 가 상시 EBS 볼륨 하나를 만듭니다. gp3, 암호화, 기본 20GiB 이고 platform 노드와 같은 2c 에 둡니다(변수 `prometheus_volume`). 20GiB 기준 월 약 2달러(추정)입니다. `az` 는 20-eks `node_groups.platform.az` 와 같아야 합니다. 두 층의 mock 테스트가 같은 값(2c)을 검사해서 한쪽만 바꾸면 테스트가 실패합니다.
@@ -225,7 +188,7 @@ prometheus:
 | §6 CloudWatch NLB 지표 | RDS 경보만 만든다 | 위 "NLB 경보는 미리 만들 수 없습니다" |
 | §6 CloudWatch 로그 그룹 | 만들지 않는다 | 앱과 플랫폼 로그는 Loki 로 간다. 컨트롤 플레인 로그는 매일 지우는 클러스터라 끈다 |
 | 문서에 없음 | DB 전용 서브넷 2a, 2c 와 기본 경로 없는 라우팅 테이블 | 위 "RDS 는 DB 전용 서브넷에 있습니다" |
-| 문서에 없음 | service DB 의 AWS Backup 월간 스냅샷, RDS 이벤트 구독 | 위 "service DB 백업과 복구 훈련", 운영 결정 표 참고 |
+| 문서에 없음 | RDS 이벤트 구독 | 운영 결정 표 참고 |
 | 문서에 없음 | Prometheus 데이터용 상시 EBS 볼륨 | 위 "Prometheus 데이터 볼륨" |
 | §8 `pod-identity` 모듈이 역할과 연결을 함께 만든다 | 모듈은 역할만, 연결은 20-eks root | 위 "Pod Identity 역할은 10-base 에" |
 | §8 `rds` 모듈을 3번 호출 | `module "rds"` 하나를 `for_each = var.databases` 로 3번 | DB 를 더하고 빼는 일이 변수 한 줄이다 |
@@ -252,7 +215,6 @@ prometheus:
 | Redis | ElastiCache 가 아니라 클러스터 안 StatefulSet. Terraform 에 없다. 클러스터를 매일 지우므로 장애 큐 데이터가 그때 사라지는 것을 받아들인다 | 큐 데이터를 하루 넘게 보존해야 할 때 ElastiCache 나 10-base 의 영속 저장소를 검토한다 |
 | DB 서브넷 | RDS 는 DB 전용 서브넷 2a, 2c 에 둔다. 라우팅 테이블에 기본 경로가 없어 NAT 나 IGW 로 나갈 수 없다. 노드 서브넷과 RDS 보안 그룹(노드에서 오는 5432)은 그대로다 | RDS 가 외부(예: S3 내보내기)에 닿아야 할 때 VPC endpoint 를 DB 라우팅 테이블에 더한다 |
 | RDS AZ | RDS 3개를 2a 에 둔다(`rds_availability_zone`). app 노드와 같은 AZ 라 AZ 간 지연과 전송 요금이 없다. 서브넷 그룹은 2a, 2c 를 유지하고 Multi-AZ 는 끈다 | 운영 트래픽을 받거나 2a 장애를 견뎌야 할 때 service DB 부터 Multi-AZ 를 켠다 |
-| service DB 백업 | service DB 만 AWS Backup 으로 매월 1일 10:00 KST 스냅샷, 90일 보관. 선택은 ARN 으로 한다. RDS 자동 백업 7일, 삭제 방지, 마지막 스냅샷은 3개 모두 유지한다. 분기마다 위 절차로 복구 훈련을 한다 | 보관 기간이나 대상 DB 가 바뀔 때. 다른 리전 사본이 필요하면 copy action 을 더한다 |
 | RDS 이벤트 | DB 3개의 availability, failover, failure, low storage, maintenance, notification, recovery 이벤트를 CloudWatch 경보와 같은 alerts 주제로 보낸다. 같은 계정 RDS 는 주제 기본 정책으로 게시할 수 있어 주제 정책을 두지 않는다 | 주제를 암호화하거나 다른 계정 RDS 를 받을 때 주제 정책을 더한다 |
 | Prometheus 데이터 | 10-base 의 상시 EBS(2c, 20GiB)에 남겨 날짜를 넘어 지표를 비교한다. Alertmanager silence 와 Grafana 에서 손으로 고친 내용은 여전히 매일 사라진다. 대시보드는 gitops 코드로 관리한다 | 보존 기간이 늘어 20GiB 가 모자라면 `prometheus_volume.size_gib` 를 늘린다 |
 | incident 배치 (보류) | 첫 클러스터를 올린 뒤 platform 노드의 메모리 여유를 잰다. 여유가 있으면 `incident` namespace 를 platform 노드(2c)로 옮겨 app 노드가 죽어도 장애 대응 봇이 살아 있게 한다. NAT 가 2a 에 있어 2a 전체 장애에는 도움이 되지 않는다. Terraform 변경은 없다 | 첫 클러스터 기동 뒤 측정값으로 정한다 |

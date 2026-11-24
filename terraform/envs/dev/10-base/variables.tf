@@ -90,12 +90,6 @@ variable "rds_backup_retention_days" {
   default     = 7
 }
 
-variable "service_backup_retention_days" {
-  description = "AWS Backup 으로 받는 service DB 월간 스냅샷 보존 기간(일)"
-  type        = number
-  default     = 90
-}
-
 variable "rds_alarm_thresholds" {
   description = "RDS CloudWatch 경보 기준. db.t4g.micro 의 max_connections 는 100 남짓이다"
   type = object({

@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | `terraform/bootstrap/` | state 버킷, GitHub OIDC 공급자, INFRA plan/apply 역할. 계정마다 한 번 적용 | infra |
 | `terraform/modules/` | `network`, `rds`, `eks`, `pod-identity`, `platform`. 아래 층들이 부르는 모듈 | infra |
-| `terraform/envs/dev/10-base/` | 늘 켜 두는 층. VPC, DB 전용 서브넷, NAT 용 EIP, RDS 3개와 경보, RDS 이벤트 구독, service DB 월간 백업(AWS Backup), Prometheus 데이터용 EBS 볼륨, S3, ECR, Secrets Manager, SES, CloudTrail, 예산, Pod Identity 역할, ECR push 역할, 보안 스캔 업로드 역할 | infra |
+| `terraform/envs/dev/10-base/` | 늘 켜 두는 층. VPC, DB 전용 서브넷, NAT 용 EIP, RDS 3개와 경보, RDS 이벤트 구독, Prometheus 데이터용 EBS 볼륨, S3, ECR, Secrets Manager, SES, CloudTrail, 예산, Pod Identity 역할, ECR push 역할, 보안 스캔 업로드 역할 | infra |
 | `terraform/envs/dev/20-eks/` | 코어타임 층. NAT Gateway, EKS, 노드그룹 2개, 애드온, Pod Identity 연결 | infra |
 | `terraform/envs/dev/30-platform/` | 코어타임 층. LB Controller, External Secrets, ExternalDNS(도메인이 있을 때), Argo CD | infra |
 | `terraform/eks.sh` | 코어타임 층 올리기, 내리기, 남은 리소스 확인 | infra |

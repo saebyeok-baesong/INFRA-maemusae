@@ -142,16 +142,6 @@ run "rds_wiring" {
   }
 
   assert {
-    condition     = aws_backup_selection.service.resources == toset(["arn:aws:rds:ap-northeast-2:123456789012:db:maemusae-service"])
-    error_message = "AWS Backup 선택에는 service DB ARN 하나만 들어간다"
-  }
-
-  assert {
-    condition     = one(aws_backup_plan.service.rule).lifecycle[0].delete_after == 90
-    error_message = "service DB 월간 스냅샷은 90일 보관한다"
-  }
-
-  assert {
     condition     = aws_db_event_subscription.rds.source_type == "db-instance" && aws_db_event_subscription.rds.source_ids == toset(["maemusae-incident", "maemusae-security", "maemusae-service"])
     error_message = "RDS 이벤트 구독은 DB 3개를 모두 받는다"
   }
