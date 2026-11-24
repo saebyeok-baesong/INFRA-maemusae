@@ -40,7 +40,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        dir: [bootstrap, base, cluster]
+        dir: [bootstrap, modules/network, envs/dev/10-base, envs/dev/20-eks, envs/dev/30-platform]
     defaults:
       run:
         working-directory: terraform/${{ matrix.dir }}
@@ -65,7 +65,7 @@ jobs:
           tflint --init --config "$GITHUB_WORKSPACE/terraform/.tflint.hcl"
           tflint --config "$GITHUB_WORKSPACE/terraform/.tflint.hcl" --format compact
 
-  # cluster 층은 eks.yml 이 코어타임에 올리고 내린다. 여기서는 base 만 plan/apply 한다
+  # 20-eks, 30-platform 은 eks.yml 이 코어타임에 올리고 내린다. 여기서는 10-base 만 plan/apply 한다
   plan:
     needs: [fmt, validate]
     if: github.event_name == 'pull_request'
@@ -78,7 +78,7 @@ jobs:
       TF_VAR_aws_account_id: ${{ vars.AWS_ACCOUNT_ID }}
     defaults:
       run:
-        working-directory: terraform/base
+        working-directory: terraform/envs/dev/10-base
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Skip if AWS is not configured
@@ -101,7 +101,7 @@ jobs:
         run: terraform init -input=false -backend-config=backend.hcl -backend-config="bucket=maemusae-tfstate-$TF_VAR_aws_account_id"
       - if: steps.guard.outputs.skip != 'true'
         env:
-          TF_VAR_budget_email: ${{ secrets.BUDGET_EMAIL }}
+          TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
         run: terraform plan -input=false -lock=false -no-color
 
   apply:
@@ -118,7 +118,7 @@ jobs:
       TF_VAR_aws_account_id: ${{ vars.AWS_ACCOUNT_ID }}
     defaults:
       run:
-        working-directory: terraform/base
+        working-directory: terraform/envs/dev/10-base
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Skip if AWS is not configured
@@ -141,5 +141,5 @@ jobs:
         run: terraform init -input=false -backend-config=backend.hcl -backend-config="bucket=maemusae-tfstate-$TF_VAR_aws_account_id"
       - if: steps.guard.outputs.skip != 'true'
         env:
-          TF_VAR_budget_email: ${{ secrets.BUDGET_EMAIL }}
+          TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
         run: terraform apply -input=false -auto-approve -lock-timeout=5m

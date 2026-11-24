@@ -1,5 +1,5 @@
 locals {
-  # base, cluster, eks.sh, CI 가 계정 ID 만으로 같은 이름을 다시 만든다
+  # envs/*, eks.sh, CI 가 계정 ID 만으로 같은 이름을 다시 만든다
   state_bucket = "${var.project}-tfstate-${var.aws_account_id}"
 }
 

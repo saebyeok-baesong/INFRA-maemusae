@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# cluster 층을 코어타임에만 띄우는 도우미. 사용법은 README.md
+# 20-eks, 30-platform 층을 코어타임에만 띄우는 도우미. 사용법은 README.md
 # 수동 실행과 GitHub Actions 스케줄(.github/workflows/eks.yml)이 같은 함수를 부른다.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CLUSTER="$DIR/cluster"
+ENV_DIR="$DIR/envs/${ENV:-dev}"
+BASE="$ENV_DIR/10-base"
+EKS="$ENV_DIR/20-eks"
+PLATFORM="$ENV_DIR/30-platform"
 NAME="${NAME:-maemusae}"
 REGION="${AWS_REGION:-ap-northeast-2}"
 
@@ -16,11 +19,11 @@ HOLD_MAX="${HOLD_MAX:-22:00}"
 usage() {
   cat >&2 <<'USAGE'
 usage:
-  eks.sh up                 cluster 층 apply, 노드 Ready 까지 기다린다
-  eks.sh down               Argo CD 앱 삭제 -> LoadBalancer, PVC 정리 -> cluster 층 destroy -> leftovers
+  eks.sh up                 20-eks apply -> 노드 Ready -> 30-platform apply
+  eks.sh down               Argo CD 앱 삭제 -> LoadBalancer, PVC, ExternalDNS 레코드 정리 -> 30-platform, 20-eks destroy -> leftovers
   eks.sh drain              KUBECONFIG 클러스터에서 down 의 클러스터 안 정리만 한다
-  eks.sh leftovers          cluster 층 리소스가 남았는지 확인한다 (남으면 exit 1)
-  eks.sh sweep              코어타임 밖이고 cluster 층이 남아 있으면 down (몇 번 돌아도 같은 상태로 수렴)
+  eks.sh leftovers          코어타임 층 리소스가 남았는지 확인한다 (남으면 exit 1)
+  eks.sh sweep              코어타임 밖이고 코어타임 층이 남아 있으면 down (몇 번 돌아도 같은 상태로 수렴)
   eks.sh keep-up <요일1-7> <HH:MM> <YYYY-MM-DD> [hold]   지금 클러스터를 유지할 시간인지 (0 = 유지)
 USAGE
   exit 2
@@ -34,10 +37,9 @@ account_id() {
   export TF_VAR_aws_account_id
 }
 
-tf() { terraform -chdir="$CLUSTER" "$@"; }
 tf_init() {
   account_id
-  tf init -input=false -reconfigure -backend-config=backend.hcl \
+  terraform -chdir="$1" init -input=false -reconfigure -backend-config=backend.hcl \
     -backend-config="bucket=$NAME-tfstate-$TF_VAR_aws_account_id" >/dev/null
 }
 caller_cidr() { echo "$(curl -fsS https://checkip.amazonaws.com | tr -d '[:space:]')/32"; }
@@ -71,13 +73,38 @@ kubeconfig() {
 
 up() {
   local start=$SECONDS
-  tf_init
-  tf apply -input=false -auto-approve -lock-timeout=5m -var "caller_cidr=$(caller_cidr)"
+  tf_init "$EKS"
+  terraform -chdir="$EKS" apply -input=false -auto-approve -lock-timeout=5m -var "caller_cidr=$(caller_cidr)"
   kubeconfig
   kubectl wait --for=condition=Ready nodes --all --timeout=10m
+  tf_init "$PLATFORM"
+  terraform -chdir="$PLATFORM" apply -input=false -auto-approve -lock-timeout=5m
   kubectl get nodes -L role
   log "up took $((SECONDS - start))s"
-  tf output
+  terraform -chdir="$EKS" output
+}
+
+# 10-base 의 output. Route53 영역 ID 처럼 코어타임 층이 지워진 뒤에도 필요한 값을 읽는다
+base_output() {
+  tf_init "$BASE"
+  terraform -chdir="$BASE" output -raw "$1"
+}
+
+# ExternalDNS(policy=sync)가 지운 Service 의 레코드를 다음 동기화에서 지운다. 30-platform 을 지우기 전에 끝나야 한다
+dns_records() {
+  local zone="$1"
+  aws route53 list-resource-record-sets --hosted-zone-id "$zone" \
+    --query "ResourceRecordSets[?Type=='TXT' && contains(join('', ResourceRecords[].Value), 'external-dns/owner=$NAME')].Name" --output text
+}
+
+wait_dns_records() {
+  local zone deadline=$((SECONDS + 600))
+  zone="$(base_output route53_zone_id)"
+  [[ -n "$zone" ]] || return 0
+  while [[ -n "$(dns_records "$zone")" ]]; do
+    ((SECONDS < deadline)) || die "external-dns records still in $zone after 10m"
+    sleep 15
+  done
 }
 
 # Terraform 밖에서 생긴 AWS 리소스(NLB, EBS)를 남기지 않게 지운다. NLB 는 LB Controller 가 살아 있을 때 지워야 따라 지워진다
@@ -103,20 +130,27 @@ drain() {
   # StatefulSet 의 PVC 는 Argo CD 가 지우지 않는다. EBS CSI 가 볼륨을 지울 때까지 PV 를 기다린다
   kubectl delete pvc --all -A --timeout=10m
   [[ -z "$(kubectl get pv -o name)" ]] || kubectl wait --for=delete pv --all --timeout=10m
+  wait_dns_records
 }
 
 down() {
   local start=$SECONDS status
   status="$(cluster_status)"
+  tf_init "$PLATFORM"
   if [[ "$status" == ACTIVE ]]; then
     ensure_endpoint_access
     kubeconfig
     drain
+    terraform -chdir="$PLATFORM" destroy -input=false -auto-approve -lock-timeout=5m
   else
+    # Helm 릴리스는 클러스터와 함께 사라졌다. 닿을 수 없는 클러스터에 destroy 를 부르지 않고 state 만 비운다
     log "cluster status $status: skipping in-cluster cleanup"
+    terraform -chdir="$PLATFORM" state list | while read -r addr; do
+      terraform -chdir="$PLATFORM" state rm -lock-timeout=5m "$addr" >/dev/null
+    done
   fi
-  tf_init
-  tf destroy -input=false -auto-approve -lock-timeout=5m -var "caller_cidr=$(caller_cidr)"
+  tf_init "$EKS"
+  terraform -chdir="$EKS" destroy -input=false -auto-approve -lock-timeout=5m -var "caller_cidr=$(caller_cidr)"
   log "down took $((SECONDS - start))s"
   leftovers
 }
@@ -126,7 +160,7 @@ leftovers() {
   # 조회가 실패하면 "0개"로 읽지 않고 멈춘다. && 와 pipefail 이 실패를 넘긴다
   arns="$(
     {
-      aws resourcegroupstaggingapi get-resources --region "$REGION" --tag-filters "Key=Project,Values=$NAME" Key=Layer,Values=cluster \
+      aws resourcegroupstaggingapi get-resources --region "$REGION" --tag-filters "Key=Project,Values=$NAME" Key=Layer,Values=eks \
         --query 'ResourceTagMappingList[].ResourceARN' --output text &&
         aws resourcegroupstaggingapi get-resources --region "$REGION" --tag-filters "Key=elbv2.k8s.aws/cluster,Values=$NAME" \
           --query 'ResourceTagMappingList[].ResourceARN' --output text &&

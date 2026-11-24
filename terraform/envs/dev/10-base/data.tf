@@ -1,0 +1,81 @@
+resource "aws_db_subnet_group" "this" {
+  name       = var.name
+  subnet_ids = values(module.network.private_subnet_ids_by_az)
+}
+
+module "rds" {
+  source   = "../../../modules/rds"
+  for_each = var.databases
+
+  identifier         = "${var.name}-${each.key}"
+  db_name            = each.key
+  engine_version     = each.value.engine_version
+  instance_class     = each.value.instance_class
+  allocated_storage  = each.value.allocated_storage
+  subnet_group_name  = aws_db_subnet_group.this.name
+  security_group_ids = [module.network.rds_security_group_id]
+
+  backup_retention_days = var.rds_backup_retention_days
+  deletion_protection   = var.rds_deletion_protection
+  alarm_topic_arn       = aws_sns_topic.alerts.arn
+  alarm_thresholds      = var.rds_alarm_thresholds
+}
+
+locals {
+  # expire_days = null 이면 객체를 지우지 않는다
+  buckets = {
+    uploads    = { force_destroy = false, expire_days = null }
+    loki       = { force_destroy = true, expire_days = var.loki_retention_days }
+    cloudtrail = { force_destroy = false, expire_days = var.cloudtrail_retention_days }
+  }
+}
+
+resource "aws_s3_bucket" "this" {
+  for_each = local.buckets
+
+  bucket        = "${var.name}-${each.key}-${var.aws_account_id}"
+  force_destroy = each.value.force_destroy
+}
+
+resource "aws_s3_bucket_public_access_block" "this" {
+  for_each = aws_s3_bucket.this
+
+  bucket = each.value.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "this" {
+  for_each = aws_s3_bucket.this
+
+  bucket = each.value.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "this" {
+  for_each = { for k, v in local.buckets : k => v if v.expire_days != null }
+
+  bucket = aws_s3_bucket.this[each.key].id
+
+  rule {
+    id     = "expire"
+    status = "Enabled"
+    filter {}
+
+    expiration {
+      days = each.value.expire_days
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 1
+    }
+  }
+}

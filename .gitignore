@@ -20,3 +20,6 @@ terraform.rc
 .DS_Store
 .idea/
 .vscode/
+
+# 모듈은 root 가 아니다. CI 가 테스트용으로 init 할 때만 생긴다
+terraform/modules/**/.terraform.lock.hcl

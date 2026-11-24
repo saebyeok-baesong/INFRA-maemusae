@@ -1,11 +1,11 @@
 name: eks
 
-# cluster 층을 코어타임(평일 KST)에만 띄운다. 운영 방법은 README.md
+# 20-eks, 30-platform 층을 코어타임(평일 KST)에만 띄운다. 운영 방법은 README.md
 # - 올리기: 평일 13:40 KST. 저장소 변수 EKS_SCHEDULE_ENABLED=true 일 때만 돈다
-# - 정리: 매시 5분, 35분. 코어타임이 17:30에 끝나서 30분 간격으로 본다. 코어타임 밖이면 eks.sh sweep 이 cluster 층을 지운다. 끄는 스위치가 없다
+# - 정리: 매시 5분, 35분. 코어타임이 17:30에 끝나서 30분 간격으로 본다. 코어타임 밖이면 eks.sh sweep 이 두 층을 지운다. 끄는 스위치가 없다
 on:
   schedule:
-    - cron: "40 4 * * 1-5" # 13:40 KST. eks.sh 의 UP_AT 과 같아야 한다
+    - cron: "40 4 * * 1-5" # 13:40 KST. eks.sh 의 UP_AT, 아래 Decide action 의 비교 문자열과 같아야 한다
     - cron: "5,35 * * * *"
   workflow_dispatch:
     inputs:
@@ -47,7 +47,7 @@ jobs:
           ROLE: ${{ vars.AWS_APPLY_ROLE_ARN }}
         run: |
           if [ -n "$INPUT" ]; then action="$INPUT"
-          elif [ "$CRON" != "30 0 * * 1-5" ]; then action=sweep
+          elif [ "$CRON" != "40 4 * * 1-5" ]; then action=sweep
           elif [ "$ENABLED" = "true" ]; then action=up
           else action=skip; echo "::notice::EKS_SCHEDULE_ENABLED 가 true 가 아니라 올리지 않습니다."
           fi
