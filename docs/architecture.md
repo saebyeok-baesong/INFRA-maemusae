@@ -124,7 +124,7 @@ ECR push 역할에 이 권한을 더하지 않고 역할을 따로 둔 이유는
 | --- | --- | --- |
 | §1, §2.1 NAT Gateway 상시 | NAT Gateway 는 20-eks(코어타임), EIP 만 상시 | 노드가 없을 때 NAT 를 쓸 곳이 없다. 운영 결정 표 참고 |
 | §2.1 private 라우팅 테이블에 `0.0.0.0/0 → NAT` | 10-base 의 테이블에는 기본 경로가 없고 20-eks 가 `aws_route` 로 더하고 지운다 | NAT 와 수명을 맞춘다 |
-| §3.3 코어타임 09:30~18:00 | 평일 13:40~17:30 KST | 운영 결정 표 참고 |
+| §3.3 코어타임 09:30-18:00 | 평일 13:40-17:30 KST | 운영 결정 표 참고 |
 | §4.3 approvals 에 Argo CD 롤백 권한 필요 | Argo CD 권한을 주지 않는다. approvals 는 INFRA 레포에 revert PR 을 열고 merge 해서 되돌린다 | Git 이 배포 기록의 원본으로 남는다. IAM 이나 Argo CD RBAC 설정이 필요 없다 |
 | §6 ECR 이미지 FE, BE, webhook, worker, approvals, migrate | `web`, `api`, `migrate`(SERVICE 가 push), `ops`(OPS 가 push) 4개 | OPS 는 이미지 하나에 진입점 api, worker, approvals 를 둔다. 운영 결정 표 참고 |
 | §6 Secrets Manager 에 OpenAI 키, Discord 웹훅, DB 접속 정보 | `maemusae/openai`, `maemusae/discord`(봇 토큰), `maemusae/github-rollback-app`(롤백 App private key)와 RDS 마스터 비밀 | Discord 는 웹훅 대신 승인 봇의 토큰을 둔다. 롤백 App 은 approvals 가 INFRA 에 PR 을 열고 merge 할 때 쓴다 |
@@ -145,7 +145,7 @@ ECR push 역할에 이 권한을 더하지 않고 역할을 따로 둔 이유는
 | --- | --- | --- |
 | 가용 영역 | 퍼블릭 서브넷, NAT, app 노드 모두 2a 하나. 비용 절감을 위해 2a 장애 시 서비스와 egress 가 같이 끊기는 것을 받아들인다 | 운영 트래픽을 받을 때 퍼블릭 서브넷과 NAT 를 2c 에도 두고 app 노드를 2c 에도 둔다. `modules/network` 의 퍼블릭 서브넷을 map 으로 바꿔야 한다 |
 | NAT | NAT Gateway 는 코어타임에만, EIP 는 상시. 서울 단가(Pricing API 조회값)는 NAT $0.059/h, 공인 IPv4 $0.005/h 다. 상시면 월 약 $46.7, 코어타임 NAT(평일 22일 x 4시간) + 상시 EIP 면 월 약 $8.8 이다. 데이터 처리 요금은 뺀 값이다. 출구 IP 는 EIP 가 붙잡고 있어 매일 같다. NAT 를 상시로 둔 사례(nerd-nam)는 EKS 와 NLB 를 남기는 구조였고, 여기는 EKS 를 매일 지워서 해당하지 않는다 | 코어타임 밖에 노드나 다른 private 리소스가 외부로 나가야 하면 NAT 를 10-base 로 옮긴다 |
-| 코어타임 | 평일 13:40~17:30 KST. EKS 생성에 15분 안팎이 걸려 14:00 부터 쓸 수 있게 일찍 올린다. 정리 cron 이 30분마다 돌아 17:35 전후에 내려간다 | 팀 일정이 바뀌면 `eks.sh` 의 `UP_AT`, `CORE_END` 와 `eks.yml` 의 올리기 cron, Decide action 의 비교 문자열을 함께 바꾼다 |
+| 코어타임 | 평일 13:40-17:30 KST. EKS 생성에 15분 안팎이 걸려 14:00 부터 쓸 수 있게 일찍 올린다. 정리 cron 이 30분마다 돌아 17:35 전후에 내려간다 | 팀 일정이 바뀌면 `eks.sh` 의 `UP_AT`, `CORE_END` 와 `eks.yml` 의 올리기 cron, Decide action 의 비교 문자열을 함께 바꾼다 |
 | 도메인 | 아직 없음. `route53_zone_id`, `ses_domain` 이 비어 있어 ExternalDNS 역할과 설치, SES 도메인, DKIM 레코드를 만들지 않는다 | 도메인을 산 뒤 두 변수를 채운다 |
 | CloudTrail | 2026-11-25 에 계정에서 `describe-trails --include-shadow-trails`(ap-northeast-2)로 확인한 결과 trail 이 없다. 이 trail 이 첫 trail 이라 관리 이벤트 사본 과금이 없다 | 다른 팀이 trail 을 만들면 하나로 합친다 |
 | apply 역할 권한 | PowerUser 와 IAMFull 을 유지한다 | INFRA issue #2 에서 보안팀과 합의해 줄인다 |
