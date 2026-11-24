@@ -83,7 +83,7 @@ cluster 층은 Argo CD 만 Helm 으로 설치합니다. infra_template 도 Argo 
 | 항목 | 결정 | 다시 볼 때 |
 | --- | --- | --- |
 | 가용 영역 | 퍼블릭 서브넷, NAT, app 노드 모두 2a 하나. 비용 절감을 위해 2a 장애 시 서비스와 egress가 같이 끊기는 것을 받아들인다 | 운영 트래픽을 받을 때 `public_subnet_cidrs`에 2c를 더하고 app 노드를 2c에도 둔다 |
-| 코어타임 | 평일 14:00~17:30 KST. 정리 cron이 30분마다 돌아 17:35 전후에 내려간다 | 팀 일정이 바뀌면 `eks.sh`의 `UP_AT`, `CORE_END`와 `eks.yml`의 올리기 cron을 함께 바꾼다 |
+| 코어타임 | 평일 13:40~17:30 KST. EKS 생성에 15분 안팎이 걸려 14:00부터 쓸 수 있게 일찍 올린다. 정리 cron이 30분마다 돌아 17:35 전후에 내려간다 | 팀 일정이 바뀌면 `eks.sh`의 `UP_AT`, `CORE_END`와 `eks.yml`의 올리기 cron을 함께 바꾼다 |
 | 도메인 | 아직 없음. `route53_zone_id`, `ses_domain`이 비어 있어 ExternalDNS 역할과 SES 도메인을 만들지 않는다 | 도메인을 산 뒤 두 변수를 채운다 |
 | CloudTrail | 2026-11-25에 계정에서 `describe-trails --include-shadow-trails`(ap-northeast-2)로 확인한 결과 trail이 없다. 이 trail이 첫 trail이라 관리 이벤트 사본 과금이 없다 | 다른 팀이 trail을 만들면 하나로 합친다 |
 | apply 역할 권한 | PowerUser와 IAMFull을 유지한다 | 보안팀과 합의해 줄인다 |

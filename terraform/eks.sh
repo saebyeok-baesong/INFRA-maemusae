@@ -9,7 +9,7 @@ NAME="${NAME:-maemusae}"
 REGION="${AWS_REGION:-ap-northeast-2}"
 
 # 코어타임(KST). UP_AT 은 eks.yml 의 올리기 cron 과 같은 시각이어야 한다
-UP_AT="${UP_AT:-14:00}"
+UP_AT="${UP_AT:-13:40}"
 CORE_END="${CORE_END:-17:30}"
 HOLD_MAX="${HOLD_MAX:-22:00}"
 
