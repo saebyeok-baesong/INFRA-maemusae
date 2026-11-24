@@ -2,7 +2,7 @@
 
 매무새 EKS 환경의 인프라와 배포 정의입니다. Argo CD는 이 레포의 `gitops/`만 바라봅니다.
 
-| 경로 | 내용 | 주인 |
+| 경로 | 내용 | 담당 |
 | --- | --- | --- |
 | `terraform/bootstrap/` | state 버킷, GitHub OIDC 공급자, INFRA plan/apply 역할. 계정마다 한 번 적용 | infra |
 | `terraform/base/` | 늘 켜 두는 층. VPC, RDS 3개, S3, ECR, Secrets Manager, IAM 역할, CloudTrail, 예산, SES | infra |
