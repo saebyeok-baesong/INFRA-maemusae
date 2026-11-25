@@ -2,7 +2,7 @@
 
 매무새 EKS 환경의 인프라와 배포 정의입니다. Argo CD는 이 레포의 `gitops/`만 바라봅니다.
 
-| 경로 | 내용 | 주인 |
+| 경로 | 내용 | 담당 |
 | --- | --- | --- |
 | `terraform/` | VPC, EKS, RDS, ECR, IAM 역할 | infra |
 | `gitops/` | Argo CD app-of-apps, 앱과 관측 스택 values | infra |
