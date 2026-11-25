@@ -34,5 +34,11 @@ variable "chart_versions" {
     external_secrets             = string
     external_dns                 = string
     argocd                       = string
+    argocd_apps                  = string
   })
+}
+
+variable "gitops_repo_url" {
+  description = "Argo CD root 앱이 gitops/apps/ 를 읽을 저장소"
+  type        = string
 }

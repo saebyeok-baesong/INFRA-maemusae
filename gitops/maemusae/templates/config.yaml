@@ -1,0 +1,22 @@
+# api 의 비밀이 아닌 설정. 비밀은 secrets.yaml (Secrets Manager → External Secrets)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-config
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+data:
+  # 도메인과 https, SMTP(SES)가 생기기 전까지 dev 로 띄운다. production 은 COOKIE_SECURE, 운영 도메인, SMTP 가 없으면 시작을 거부한다
+  APP_ENV: dev
+  LOG_FORMAT: json
+  COOKIE_SECURE: "false"
+  API_DOCS_ENABLED: "false"
+  MAIL_BACKEND: console
+  LLM_PROVIDER: openai
+
+  # S3. 키와 엔드포인트를 비워 Pod Identity(maemusae/api)로 접근한다 (SERVICE #2 가 머지돼야 동작)
+  STORAGE_BACKEND: s3
+  STORAGE_BUCKET: maemusae-public-<ACCOUNT_ID>
+  STORAGE_PRIVATE_BUCKET: maemusae-private-<ACCOUNT_ID>
+  STORAGE_S3_REGION: ap-northeast-2
+  STORAGE_PUBLIC_BASE_URL: https://maemusae-public-<ACCOUNT_ID>.s3.ap-northeast-2.amazonaws.com

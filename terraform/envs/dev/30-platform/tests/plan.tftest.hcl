@@ -35,7 +35,7 @@ run "no_domain" {
   command = plan
 
   assert {
-    condition     = module.platform.releases == tolist(["argocd", "aws-load-balancer-controller", "external-secrets"])
+    condition     = module.platform.releases == tolist(["argocd", "argocd-apps", "aws-load-balancer-controller", "external-secrets"])
     error_message = "도메인이 없으면 ExternalDNS 를 설치하지 않는다"
   }
 }
@@ -60,7 +60,7 @@ run "with_domain" {
   }
 
   assert {
-    condition     = module.platform.releases == tolist(["argocd", "aws-load-balancer-controller", "external-dns", "external-secrets"])
+    condition     = module.platform.releases == tolist(["argocd", "argocd-apps", "aws-load-balancer-controller", "external-dns", "external-secrets"])
     error_message = "Route53 영역이 있으면 ExternalDNS 를 설치한다"
   }
 }

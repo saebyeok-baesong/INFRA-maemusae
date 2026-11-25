@@ -1,0 +1,7 @@
+# 앱 이름: 저장소@sha256:digest (SPEC contracts/images-yaml.md). 각 앱 레포 CI 가 PR 로 자기 줄을 고친다
+# 앱 줄 사이 빈 줄은 지우지 않는다. 동시에 열린 두 PR 이 충돌 없이 합쳐진다
+# 지금 값은 자리표시다. 첫 이미지 PR 이 실제 계정 ID 와 digest 로 바꾼다
+
+web: 000000000000.dkr.ecr.ap-northeast-2.amazonaws.com/web@sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+api: 000000000000.dkr.ecr.ap-northeast-2.amazonaws.com/api@sha256:0000000000000000000000000000000000000000000000000000000000000000

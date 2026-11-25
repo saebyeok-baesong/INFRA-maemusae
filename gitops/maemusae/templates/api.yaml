@@ -1,0 +1,65 @@
+# 백엔드(FastAPI). 서비스 계정 api 에 Pod Identity(10-base pod_identities.api)가 붙어 S3 를 쓴다
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: api
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  # ponytail: replica 1, app 노드도 2a 하나. 운영 트래픽을 받을 때 늘린다
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: api
+    spec:
+      serviceAccountName: api
+      nodeSelector:
+        role: app
+      tolerations:
+        - { key: role, operator: Equal, value: app, effect: NoSchedule }
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: api
+          image: {{ required "gitops/apps/images.yaml 에 api 이 없다" .Values.api }}
+          ports:
+            - { name: http, containerPort: 8000 }
+          envFrom:
+            - configMapRef: { name: api-config }
+            - secretRef: { name: api-secrets }
+            - secretRef: { name: db }
+          readinessProbe:
+            httpGet: { path: /health/ready, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          resources:
+            # 문서 변환(markitdown)이 메모리를 쓴다
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { memory: 1Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+spec:
+  selector:
+    app.kubernetes.io/name: api
+  ports:
+    - { name: http, port: 8000, targetPort: http }

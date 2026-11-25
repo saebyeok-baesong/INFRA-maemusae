@@ -1,0 +1,6 @@
+# 매무새 앱(SERVICE). 배포 순서(sync wave): 설정·비밀(-1) → migrate Job(0) → api, web(1)
+# 이미지는 values 대신 gitops/apps/images.yaml(SPEC contracts/images-yaml.md)을 읽는다. gitops/apps/maemusae.yaml 의 valueFiles 참고
+# <...> 자리는 10-base apply 뒤 terraform output 으로 채운다. docs/architecture.md "gitops 매무새 앱" 참고
+apiVersion: v2
+name: maemusae
+version: 0.1.0

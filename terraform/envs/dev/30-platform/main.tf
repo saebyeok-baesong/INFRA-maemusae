@@ -21,7 +21,7 @@ locals {
   eks  = data.terraform_remote_state.eks.outputs
 }
 
-# LB Controller, External Secrets, ExternalDNS, Argo CD 만 설치한다. 나머지 애드온과 앱은 Argo CD 가 gitops/ 에서 설치한다
+# LB Controller, External Secrets, ExternalDNS, Argo CD 와 그 root 앱만 설치한다. 나머지 애드온과 앱은 Argo CD 가 gitops/ 에서 설치한다
 module "platform" {
   source = "../../../modules/platform"
 
@@ -31,4 +31,5 @@ module "platform" {
   pod_identities  = local.base.pod_identities
   route53_zone_id = local.base.route53_zone_id
   chart_versions  = var.chart_versions
+  gitops_repo_url = var.gitops_repo_url
 }

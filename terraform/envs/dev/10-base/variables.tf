@@ -126,10 +126,9 @@ variable "ecr_repositories" {
   description = "ECR 저장소 이름 => 그 저장소에 push 할 GitHub 저장소 (owner/repo). 줄을 지우면 저장소와 push 권한이 같이 빠진다"
   type        = map(string)
   default = {
-    web     = "saebyeok-baesong/SERVICE-watch-nyang"
-    api     = "saebyeok-baesong/SERVICE-watch-nyang"
-    migrate = "saebyeok-baesong/SERVICE-watch-nyang"
-    ops     = "saebyeok-baesong/OPS-watch-nyang"
+    web = "saebyeok-baesong/SERVICE-watch-nyang"
+    api = "saebyeok-baesong/SERVICE-watch-nyang"
+    ops = "saebyeok-baesong/OPS-watch-nyang"
   }
 }
 
@@ -148,7 +147,7 @@ variable "ecr_push_ref" {
 variable "app_secrets" {
   description = "Secrets Manager 비밀. <name>/<항목> 이름으로 만든다. 값은 사람이 CLI 로 넣고 External Secrets 가 클러스터로 옮긴다"
   type        = list(string)
-  default     = ["openai", "discord", "github-rollback-app", "discord-alerts-webhook"]
+  default     = ["api", "openai", "discord", "github-rollback-app", "discord-alerts-webhook"]
 }
 
 variable "security_scan_repositories" {
