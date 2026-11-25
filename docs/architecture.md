@@ -11,10 +11,12 @@ terraform/
 │   ├── eks/              클러스터, 노드그룹, 애드온, Access Entry
 │   ├── pod-identity/     컴포넌트별 IAM 역할
 │   └── platform/         Helm 릴리스 (LB Controller, External Secrets, ExternalDNS, Argo CD)
-└── envs/dev/
-    ├── 10-base/          상시
-    ├── 20-eks/           코어타임: NAT Gateway, eks 모듈, Pod Identity 연결
-    └── 30-platform/      코어타임: platform 모듈
+├── envs/dev/
+│   ├── 10-base/          상시
+│   ├── 20-eks/           코어타임: NAT Gateway, eks 모듈, Pod Identity 연결
+│   └── 30-platform/      코어타임: platform 모듈
+├── lambda/discord-alerts/  alerts 주제를 Discord 로 보내는 Lambda 코드와 자체 검사 (10-base 가 묶어 올린다)
+└── sql/                  ops 인스턴스의 DB 와 IAM 인증 역할. 사람이 한 번 실행한다
 ```
 
 ## 문서 항목별 위치
@@ -47,16 +49,17 @@ terraform/
 | §4.2, §4.3 앱과 incident 네임스페이스 | gitops 예정 | |
 | §5.1 RDS x3, db.t4g.micro, 서브넷 그룹 하나, `manage_master_user_password` | 10-base | `envs/dev/10-base/data.tf` `module.rds` 2개 service, ops (변수 `databases`, `rds_availability_zone`), `aws_db_subnet_group.this` (DB 서브넷만). ops 안의 incident, security DB 와 역할은 `terraform/sql/ops-db-roles.sql` |
 | 문서에 없음. RDS 이벤트 알림 | 10-base | `aws_db_event_subscription.rds` → `aws_sns_topic.alerts` |
+| 문서에 없음. 경보 Discord 전달 | 10-base | `aws_lambda_function.discord_alerts` (코드 `terraform/lambda/discord-alerts/main.py`), `aws_sns_topic_subscription.alerts_discord`, `aws_cloudwatch_log_group.discord_alerts`. 정책은 `iam/policies/discord-alerts.json.tftpl` |
 | 문서에 없음. Prometheus 데이터 볼륨 | 10-base | `aws_ebs_volume.prometheus` (변수 `prometheus_volume`). 붙이는 PV 는 gitops 예정 |
 | §5.2 S3 uploads, loki 와 문서에 없는 security-scans (퍼블릭 차단, SSE, 수명 주기) | 10-base | `aws_s3_bucket.this` public, private 2개, `..._public_access_block`, `..._server_side_encryption_configuration`, `aws_s3_bucket_policy.public`, `aws_s3_bucket_lifecycle_configuration.private` (접두사표 `local.private_prefixes`). 아래 "S3 버킷" |
 | §6 ECR 4개(web, api, migrate, ops) + 수명 주기 | 10-base | `envs/dev/10-base/services.tf` `aws_ecr_repository.this`, `aws_ecr_lifecycle_policy.this` (변수 `ecr_repositories`) |
-| §6 Secrets Manager | 10-base | `aws_secretsmanager_secret.app` (`maemusae/openai`, `maemusae/discord`). DB 접속 정보는 RDS 가 만드는 마스터 비밀 2개 |
+| §6 Secrets Manager | 10-base | `aws_secretsmanager_secret.app` (`maemusae/openai`, `maemusae/discord`, `maemusae/github-rollback-app`, `maemusae/discord-alerts-webhook`). DB 접속 정보는 RDS 가 만드는 마스터 비밀 2개 |
 | §6 SES + DKIM 레코드 | 10-base | `aws_sesv2_email_identity.report`, `aws_route53_record.ses_dkim`. 도메인이 있을 때만 |
 | §6 CloudWatch 경보 | 10-base | `modules/rds/main.tf` `aws_cloudwatch_metric_alarm.this` (DB 마다 CPU, 남은 저장 공간, 연결 수), `aws_sns_topic.alerts` |
 | §6 CloudTrail + S3 | 10-base | `aws_cloudtrail.this` (`s3_key_prefix = "cloudtrail"`), `aws_s3_bucket_policy.private` |
 | §6 Budgets 50/70/100% | 10-base | `aws_budgets_budget.monthly` |
 | §6 Route53 영역 | 10-base | 변수 `route53_zone_id`. 비어 있으면 ExternalDNS 와 DKIM 레코드를 만들지 않는다 |
-| §7 EKS 클러스터 역할, 노드 역할 | 20-eks | `modules/eks/main.tf` `aws_iam_role.cluster`, `aws_iam_role.node` |
+| §7 EKS 클러스터 역할, 노드 역할 | 20-eks | `modules/eks/main.tf` `aws_iam_role.cluster`, `aws_iam_role.node` (SSM `AmazonSSMManagedInstanceCore` 포함) |
 | §7 Pod Identity 역할 7개 (external-dns 는 영역이 있을 때) | 10-base | `envs/dev/10-base/iam.tf` `module.pod_identity`. 정책 문서는 `iam/policies/` |
 | §7 GitHub OIDC, Terraform apply 역할 | bootstrap | `module.github_oidc`, `module.plan_role`, `module.apply_role` |
 | §7 GitHub OIDC ECR push 역할 (SERVICE, OPS) | 10-base | `aws_iam_role.ecr_push` (GitHub 저장소마다 하나, `main` 브랜치만) |
@@ -231,10 +234,12 @@ psycopg.connect(host=host, dbname="incident", user="incident_app", password=toke
 | §3.3 코어타임 09:30-18:00 | 평일 13:40-17:30 KST | 운영 결정 표 참고 |
 | §4.3 approvals 에 Argo CD 롤백 권한 필요 | Argo CD 권한을 주지 않는다. approvals 는 INFRA 레포에 revert PR 을 열고 merge 해서 되돌린다 | Git 이 배포 기록의 원본으로 남는다. IAM 이나 Argo CD RBAC 설정이 필요 없다 |
 | §6 ECR 이미지 FE, BE, webhook, worker, approvals, migrate | `web`, `api`, `migrate`(SERVICE 가 push), `ops`(OPS 가 push) 4개 | OPS 는 이미지 하나에 진입점 api, worker, approvals 를 둔다. 운영 결정 표 참고 |
-| §6 Secrets Manager 에 OpenAI 키, Discord 웹훅, DB 접속 정보 | `maemusae/openai`, `maemusae/discord`(봇 토큰), `maemusae/github-rollback-app`(롤백 App private key)와 RDS 마스터 비밀 | Discord 는 웹훅 대신 승인 봇의 토큰을 둔다. 롤백 App 은 approvals 가 INFRA 에 PR 을 열고 merge 할 때 쓴다 |
+| §6 Secrets Manager 에 OpenAI 키, Discord 웹훅, DB 접속 정보 | `maemusae/openai`, `maemusae/discord`(봇 토큰), `maemusae/github-rollback-app`(롤백 App private key)와 RDS 마스터 비밀 | 승인 봇에는 웹훅 대신 봇 토큰을 둔다. 웹훅은 경보 채널용 `maemusae/discord-alerts-webhook` 하나만 둔다. 롤백 App 은 approvals 가 INFRA 에 PR 을 열고 merge 할 때 쓴다 |
 | 문서에 없음 | private 버킷의 `security-scans/`, 저장소별 스캔 업로드 역할, `ops-security-ingest` Pod Identity | 위 "보안 스캔 업로드" |
 | §6 CloudWatch NLB 지표 | RDS 경보만 만든다 | 위 "NLB 경보는 미리 만들 수 없습니다" |
-| §6 CloudWatch 로그 그룹 | 만들지 않는다 | 앱과 플랫폼 로그는 Loki 로 간다. 컨트롤 플레인 로그는 매일 지우는 클러스터라 끈다 |
+| §6 CloudWatch 로그 그룹 | Discord 경보 Lambda 의 로그 그룹 하나(14일)만 만든다 | 앱과 플랫폼 로그는 Loki 로 간다. 컨트롤 플레인 로그는 매일 지우는 클러스터라 끈다 |
+| §5.1 RDS x3 (security, incident, service) | RDS 2개. service 는 상시, ops 는 코어타임에만 켜고 그 안에 incident, security DB 를 둔다 | 운영 결정 표의 RDS 대수 참고 |
+| §5.2 S3 uploads, loki 와 CloudTrail 버킷 | S3 2개. public 과, 접두사(`uploads/`, `loki/`, `cloudtrail/`, `security-scans/`)로 나눈 private | 위 "S3 버킷" |
 | 문서에 없음 | DB 전용 서브넷 2a, 2c 와 기본 경로 없는 라우팅 테이블 | 위 "RDS 는 DB 전용 서브넷에 있습니다" |
 | 문서에 없음 | RDS 이벤트 구독 | 운영 결정 표 참고 |
 | 문서에 없음 | Prometheus 데이터용 상시 EBS 볼륨 | 위 "Prometheus 데이터 볼륨" |
@@ -264,5 +269,10 @@ psycopg.connect(host=host, dbname="incident", user="incident_app", password=toke
 | DB 서브넷 | RDS 는 DB 전용 서브넷 2a, 2c 에 둔다. 라우팅 테이블에 기본 경로가 없어 NAT 나 IGW 로 나갈 수 없다. 노드 서브넷과 RDS 보안 그룹(노드에서 오는 5432)은 그대로다 | RDS 가 외부(예: S3 내보내기)에 닿아야 할 때 VPC endpoint 를 DB 라우팅 테이블에 더한다 |
 | RDS AZ | RDS 2개를 2a 에 둔다(`rds_availability_zone`). app 노드와 같은 AZ 라 AZ 간 지연과 전송 요금이 없다. 서브넷 그룹은 2a, 2c 를 유지하고 Multi-AZ 는 끈다 | 운영 트래픽을 받거나 2a 장애를 견뎌야 할 때 service DB 부터 Multi-AZ 를 켠다 |
 | RDS 이벤트 | DB 2개의 availability, failover, failure, low storage, maintenance, notification, recovery 이벤트를 CloudWatch 경보와 같은 alerts 주제로 보낸다. 같은 계정 RDS 는 주제 기본 정책으로 게시할 수 있어 주제 정책을 두지 않는다 | 주제를 암호화하거나 다른 계정 RDS 를 받을 때 주제 정책을 더한다 |
+| 경보 알림 | alerts 주제를 메일과 Discord 로 함께 받는다. Lambda(Python 3.13, arm64)가 RDS 이벤트와 CloudWatch 경보를 한 줄 요약으로 바꿔 웹훅에 보낸다. 웹훅 URL 은 `maemusae/discord-alerts-webhook` 에 두고 실행 중에 읽는다. 매일 ops 를 끄고 켜는 RDS-EVENT-0087(정지), RDS-EVENT-0088(시작)은 Discord 로 보내지 않고, 정지 7일을 넘겨 스스로 켜진 RDS-EVENT-0154 는 보낸다 | 메일도 매일 정지, 시작 이벤트를 받는다. 시끄러우면 메일 구독에 필터 정책을 더한다 |
+| RDS 대수 | service, ops 2개. OPS 의 incident, security 는 ops 안의 DB 두 개다. ops 는 `eks.sh` 가 코어타임에만 켠다. 서울 단가 db.t4g.micro $0.025/h, gp3 $0.131/GB-월 기준 20GB 면 상시 월 약 $20.9, 코어타임(평일 22일 x 4시간)이면 월 약 $4.8 이다. 정지 중에도 저장 공간 요금은 나간다. service 는 SERVICE 앱이 늘 쓰므로 상시다 | OPS 가 코어타임 밖에도 DB 를 써야 하면 `eks.sh` 의 ops 정지를 뺀다 |
+| ops DB 인증 | `incident_app`, `security_app` 은 비밀번호 없이 IAM DB 인증으로만 접속한다. Pod Identity 역할마다 자기 DB 사용자 하나에만 `rds-db:connect` 가 있다. 역할과 DB 는 `terraform/sql/ops-db-roles.sql` 로 만든다 | 다른 앱이 ops 에 붙을 때 역할과 정책을 같은 방식으로 더한다 |
+| S3 | public, private 2개. 공개 업로드는 public, 나머지는 private 의 접두사로 나눈다. 위 "S3 버킷" | 접두사마다 다른 암호화 키나 복제가 필요해지면 버킷을 나눈다 |
+| 노드 접속 | SSH 키와 22 포트 없이 SSM Session Manager 로만 들어간다. 노드 역할에 `AmazonSSMManagedInstanceCore` 를 붙였다 | - |
 | Prometheus 데이터 | 10-base 의 상시 EBS(2c, 20GiB)에 남겨 날짜를 넘어 지표를 비교한다. Alertmanager silence 와 Grafana 에서 손으로 고친 내용은 여전히 매일 사라진다. 대시보드는 gitops 코드로 관리한다 | 보존 기간이 늘어 20GiB 가 모자라면 `prometheus_volume.size_gib` 를 늘린다 |
 | incident 배치 (보류) | 첫 클러스터를 올린 뒤 platform 노드의 메모리 여유를 잰다. 여유가 있으면 `incident` namespace 를 platform 노드(2c)로 옮겨 app 노드가 죽어도 장애 대응 봇이 살아 있게 한다. NAT 가 2a 에 있어 2a 전체 장애에는 도움이 되지 않는다. Terraform 변경은 없다 | 첫 클러스터 기동 뒤 측정값으로 정한다 |
