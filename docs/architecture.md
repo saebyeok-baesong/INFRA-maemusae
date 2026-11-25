@@ -89,7 +89,7 @@ terraform/
 | `aws-load-balancer-controller` | `kube-system/aws-load-balancer-controller` | 업스트림 v3.6.3 정책 그대로 |
 | `external-secrets` | `external-secrets/external-secrets` | `maemusae/*` 비밀과 RDS 마스터 비밀 읽기 |
 | `loki` | `monitoring/loki` | private 버킷 `loki/` 읽기, 쓰기, 삭제 |
-| `api` | `maemusae/api` | public 버킷 전체와 private 버킷 `uploads/` 읽기, 쓰기, 삭제 |
+| `api` | `maemusae/api` | public 버킷 전체와 private 버킷 `mms/` 읽기, 쓰기, 삭제 |
 | `ebs-csi` | `kube-system/ebs-csi-controller-sa` | `AmazonEBSCSIDriverPolicy` |
 | `external-dns` | `external-dns/external-dns` | `route53_zone_id` 영역의 레코드 변경. 영역 ID 가 있을 때만 만든다 |
 | `ops-security-ingest` | `incident/ops-security-ingest` | private 버킷 `security-scans/` 목록과 객체 읽기, ops DB 에 `security_app` 으로 IAM 접속 |
@@ -111,7 +111,7 @@ SERVICE, OPS, INFRA 의 CI 가 스캔 결과 JSON 을 `maemusae-private-<계정 
 | 버킷 | 접두사 | 쓰는 곳 | 보관 |
 | --- | --- | --- | --- |
 | `maemusae-public-<계정 ID>` | 전체 | 공개 업로드. 누구나 `GetObject` 로 읽는다. 쓰기는 `api` 만 | 지우지 않는다 |
-| `maemusae-private-<계정 ID>` | `uploads/` | 비공개 사용자 파일. `api` 가 presigned URL 로 내준다 | 지우지 않는다 |
+| `maemusae-private-<계정 ID>` | `mms/` | 매무새 문서 원본 (`mms/projects/<id>/sources/...`). `api` 가 읽어서 내려준다 | 지우지 않는다 |
 | | `loki/` | Loki 청크와 인덱스 | `loki_retention_days`(14일) |
 | | `cloudtrail/` | CloudTrail 로그 (`cloudtrail/AWSLogs/<계정 ID>/...`) | `cloudtrail_retention_days`(365일) |
 | | `security-scans/` | 보안 스캔 결과. 위 "보안 스캔 업로드" | `security_scan_retention_days`(90일) |
@@ -239,7 +239,7 @@ psycopg.connect(host=host, dbname="incident", user="incident_app", password=toke
 | §6 CloudWatch NLB 지표 | RDS 경보만 만든다 | 위 "NLB 경보는 미리 만들 수 없습니다" |
 | §6 CloudWatch 로그 그룹 | Discord 경보 Lambda 의 로그 그룹 하나(14일)만 만든다 | 앱과 플랫폼 로그는 Loki 로 간다. 컨트롤 플레인 로그는 매일 지우는 클러스터라 끈다 |
 | §5.1 RDS x3 (security, incident, service) | RDS 2개. service 는 상시, ops 는 코어타임에만 켜고 그 안에 incident, security DB 를 둔다 | 운영 결정 표의 RDS 대수 참고 |
-| §5.2 S3 uploads, loki 와 CloudTrail 버킷 | S3 2개. public 과, 접두사(`uploads/`, `loki/`, `cloudtrail/`, `security-scans/`)로 나눈 private | 위 "S3 버킷" |
+| §5.2 S3 uploads, loki 와 CloudTrail 버킷 | S3 2개. public 과, 접두사(`mms/`, `loki/`, `cloudtrail/`, `security-scans/`)로 나눈 private | 위 "S3 버킷" |
 | 문서에 없음 | DB 전용 서브넷 2a, 2c 와 기본 경로 없는 라우팅 테이블 | 위 "RDS 는 DB 전용 서브넷에 있습니다" |
 | 문서에 없음 | RDS 이벤트 구독 | 운영 결정 표 참고 |
 | 문서에 없음 | Prometheus 데이터용 상시 EBS 볼륨 | 위 "Prometheus 데이터 볼륨" |

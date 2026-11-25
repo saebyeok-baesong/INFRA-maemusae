@@ -10,12 +10,12 @@
       "Effect": "Allow",
       "Action": ["s3:ListBucket"],
       "Resource": "${private_bucket_arn}",
-      "Condition": { "StringLike": { "s3:prefix": ["uploads/*"] } }
+      "Condition": { "StringLike": { "s3:prefix": ["mms/*"] } }
     },
     {
       "Effect": "Allow",
       "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
-      "Resource": ["${public_bucket_arn}/*", "${private_bucket_arn}/uploads/*"]
+      "Resource": ["${public_bucket_arn}/*", "${private_bucket_arn}/mms/*"]
     }
   ]
 }

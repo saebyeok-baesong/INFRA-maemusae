@@ -117,7 +117,7 @@ resource "aws_s3_bucket_policy" "public" {
 locals {
   # private 버킷의 접두사 => 객체 보존 기간(일). null 이면 지우지 않는다
   private_prefixes = {
-    "uploads/"    = null
+    "mms/"        = null # SERVICE 매무새 문서 원본 (앱이 mms/projects/<id>/sources/... 로 쓴다)
     "loki/"       = var.loki_retention_days
     "cloudtrail/" = var.cloudtrail_retention_days
     # SERVICE, OPS, INFRA CI 가 올리고 incident 의 ops-security-ingest 가 읽는다

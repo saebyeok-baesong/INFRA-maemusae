@@ -75,7 +75,7 @@ run "no_domain" {
       expire-loki           = ["loki/", 14]
       expire-security-scans = ["security-scans/", 90]
     }
-    error_message = "private 은 접두사마다 만료 규칙이 있고 uploads/ 는 지우지 않는다"
+    error_message = "private 은 접두사마다 만료 규칙이 있고 mms/ 는 지우지 않는다"
   }
 
   assert {
@@ -245,13 +245,13 @@ run "private_prefixes" {
   }
 
   assert {
-    condition     = jsondecode(templatefile("${local.policy_dir}/api.json.tftpl", local.policy_vars)).Statement[2].Resource == ["arn:aws:s3:::maemusae-public-123456789012/*", "arn:aws:s3:::maemusae-private-123456789012/uploads/*"]
-    error_message = "api 는 public 전체와 private uploads/ 를 읽고 쓴다"
+    condition     = jsondecode(templatefile("${local.policy_dir}/api.json.tftpl", local.policy_vars)).Statement[2].Resource == ["arn:aws:s3:::maemusae-public-123456789012/*", "arn:aws:s3:::maemusae-private-123456789012/mms/*"]
+    error_message = "api 는 public 전체와 private mms/ 를 읽고 쓴다"
   }
 
   assert {
     condition = alltrue([
-      for f, prefix in { "api.json.tftpl" = "uploads/*", "loki.json.tftpl" = "loki/*", "ops-security-ingest.json.tftpl" = "security-scans/*" } :
+      for f, prefix in { "api.json.tftpl" = "mms/*", "loki.json.tftpl" = "loki/*", "ops-security-ingest.json.tftpl" = "security-scans/*" } :
       contains([for st in jsondecode(templatefile("${local.policy_dir}/${f}", local.policy_vars)).Statement : try(st.Condition.StringLike["s3:prefix"], null) if st.Resource == "arn:aws:s3:::maemusae-private-123456789012"], [prefix])
     ])
     error_message = "private 버킷 목록은 자기 접두사로만 볼 수 있다"
