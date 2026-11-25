@@ -145,7 +145,7 @@ ECR push 역할에 이 권한을 더하지 않고 역할을 따로 둔 이유는
 
 **RDS 비밀번호는 RDS 가 관리합니다.** `manage_master_user_password = true` 라 비밀번호가 Terraform state 에 남지 않고, Secrets Manager 에 `rds!db-...` 이름으로 생깁니다. External Secrets 가 이 비밀을 읽어 앱에 넘깁니다.
 
-**pgvector 는 마이그레이션이 켭니다.** RDS PostgreSQL 은 pgvector 를 기본으로 담고 있어 파라미터 그룹을 바꿀 필요가 없습니다. OPS 레포의 incident DB 마이그레이션이 `CREATE EXTENSION IF NOT EXISTS vector` 를 실행합니다. 마스터 사용자는 `rds_superuser` 라 확장을 만들 수 있습니다.
+**pgvector 는 ops DB 역할 SQL 이 켭니다.** RDS PostgreSQL 은 pgvector 를 기본으로 담고 있어 파라미터 그룹을 바꿀 필요가 없습니다. incident DB 의 소유자 `incident_app` 은 `rds_superuser` 가 아니라서, `terraform/sql/ops-db-roles.sql` 이 마스터 사용자로 incident DB 에 `CREATE EXTENSION IF NOT EXISTS vector` 를 실행합니다. OPS 마이그레이션은 확장이 있다고 보고 테이블만 만듭니다.
 
 **ExternalDNS 는 `policy=sync` 입니다.** 기본값 `upsert-only` 는 Service 를 지워도 레코드를 남깁니다. `eks.sh down` 은 Service 를 지운 뒤 ExternalDNS 소유 TXT 레코드가 영역에서 사라질 때까지 기다리고 나서 30-platform 을 지웁니다.
 

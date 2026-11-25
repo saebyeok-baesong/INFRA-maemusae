@@ -30,3 +30,7 @@ REVOKE CONNECT ON DATABASE incident FROM PUBLIC;
 REVOKE CONNECT ON DATABASE security FROM PUBLIC;
 GRANT CONNECT ON DATABASE incident TO incident_app;
 GRANT CONNECT ON DATABASE security TO security_app;
+
+-- incident_app 은 rds_superuser 가 아니라 확장을 만들 수 없어서 마스터가 미리 만든다
+\c incident
+CREATE EXTENSION IF NOT EXISTS vector;
