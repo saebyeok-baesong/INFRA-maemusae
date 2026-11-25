@@ -64,6 +64,81 @@ resource "aws_sns_topic_subscription" "alerts_email" {
 }
 
 locals {
+  discord_alerts = "${var.name}-discord-alerts"
+}
+
+data "archive_file" "discord_alerts" {
+  type        = "zip"
+  source_file = "${path.module}/../../../lambda/discord-alerts/main.py"
+  output_path = "${path.module}/.terraform/discord-alerts.zip"
+}
+
+data "aws_iam_policy_document" "lambda_trust" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "discord_alerts" {
+  name               = local.discord_alerts
+  assume_role_policy = data.aws_iam_policy_document.lambda_trust.json
+}
+
+resource "aws_iam_role_policy" "discord_alerts" {
+  name = "discord-alerts"
+  role = aws_iam_role.discord_alerts.id
+  policy = templatefile("${local.policy_dir}/discord-alerts.json.tftpl", {
+    log_group_arn      = aws_cloudwatch_log_group.discord_alerts.arn
+    webhook_secret_arn = aws_secretsmanager_secret.app["discord-alerts-webhook"].arn
+  })
+}
+
+resource "aws_cloudwatch_log_group" "discord_alerts" {
+  name              = "/aws/lambda/${local.discord_alerts}"
+  retention_in_days = 14
+}
+
+# alerts 주제의 RDS 경보와 이벤트를 메일과 함께 Discord 로도 보낸다. 웹훅 URL 은 비밀에 두고 실행 중에 읽는다
+resource "aws_lambda_function" "discord_alerts" {
+  function_name    = local.discord_alerts
+  role             = aws_iam_role.discord_alerts.arn
+  runtime          = "python3.13"
+  architectures    = ["arm64"]
+  handler          = "main.handler"
+  filename         = data.archive_file.discord_alerts.output_path
+  source_code_hash = data.archive_file.discord_alerts.output_base64sha256
+  timeout          = 15
+
+  environment {
+    variables = {
+      WEBHOOK_SECRET_ID = aws_secretsmanager_secret.app["discord-alerts-webhook"].arn
+    }
+  }
+
+  depends_on = [aws_cloudwatch_log_group.discord_alerts, aws_iam_role_policy.discord_alerts]
+}
+
+resource "aws_lambda_permission" "discord_alerts" {
+  statement_id  = "sns"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.discord_alerts.function_name
+  principal     = "sns.amazonaws.com"
+  source_arn    = aws_sns_topic.alerts.arn
+}
+
+resource "aws_sns_topic_subscription" "alerts_discord" {
+  topic_arn = aws_sns_topic.alerts.arn
+  protocol  = "lambda"
+  endpoint  = aws_lambda_function.discord_alerts.arn
+
+  depends_on = [aws_lambda_permission.discord_alerts]
+}
+
+locals {
   # 버킷 정책이 트레일 ARN 을 조건에 쓰고 트레일은 버킷 정책이 있어야 만들어져서, ARN 을 이름으로 미리 짓는다
   trail_arn = "arn:aws:cloudtrail:${var.region}:${var.aws_account_id}:trail/${var.name}"
 }

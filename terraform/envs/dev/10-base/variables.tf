@@ -144,7 +144,7 @@ variable "ecr_push_ref" {
 variable "app_secrets" {
   description = "Secrets Manager 비밀. <name>/<항목> 이름으로 만든다. 값은 사람이 CLI 로 넣고 External Secrets 가 클러스터로 옮긴다"
   type        = list(string)
-  default     = ["openai", "discord", "github-rollback-app"]
+  default     = ["openai", "discord", "github-rollback-app", "discord-alerts-webhook"]
 }
 
 variable "security_scan_repositories" {

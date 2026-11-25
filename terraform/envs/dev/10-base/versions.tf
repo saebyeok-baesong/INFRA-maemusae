@@ -6,6 +6,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 6.71"
     }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.7"
+    }
   }
 
   # bucket 은 계정 ID 가 들어가 공개 저장소에 두지 않는다. README 의 init 명령으로 넘긴다

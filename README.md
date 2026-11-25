@@ -45,10 +45,11 @@ export TF_VAR_alert_email=<예산 알림, RDS 경보와 이벤트를 받을 메�
 	terraform -chdir=terraform/envs/dev/10-base apply
 	```
 
-4. Secrets Manager 비밀에 값을 넣습니다. 10-base 는 빈 비밀(`maemusae/openai`, `maemusae/discord`, `maemusae/github-rollback-app`)만 만들고, 값은 state 에 남지 않게 CLI 로 넣습니다. `maemusae/discord` 에는 봇 토큰만 넣습니다. 승인 역할 ID 는 비밀이 아니라 OPS 설정입니다. `maemusae/github-rollback-app` 에는 롤백 App 의 private key 를 넣습니다(아래 GitHub 설정).
+4. Secrets Manager 비밀에 값을 넣습니다. 10-base 는 빈 비밀(`maemusae/openai`, `maemusae/discord`, `maemusae/github-rollback-app`, `maemusae/discord-alerts-webhook`)만 만들고, 값은 state 에 남지 않게 CLI 로 넣습니다. `maemusae/discord` 에는 봇 토큰만 넣습니다. 승인 역할 ID 는 비밀이 아니라 OPS 설정입니다. `maemusae/github-rollback-app` 에는 롤백 App 의 private key 를 넣습니다(아래 GitHub 설정). `maemusae/discord-alerts-webhook` 에는 경보 채널의 웹훅 URL 만 문자열로 넣습니다. alerts 주제를 구독한 Lambda 가 읽어 RDS 경보와 이벤트를 Discord 로 보냅니다.
 
 	```sh
 	aws secretsmanager put-secret-value --secret-id maemusae/openai --secret-string file://openai.json
+	aws secretsmanager put-secret-value --secret-id maemusae/discord-alerts-webhook --secret-string 'https://discord.com/api/webhooks/<id>/<token>'
 	```
 
 5. 20-eks 와 30-platform 을 올립니다. 평일 13:40 KST 에 `.github/workflows/eks.yml` 이 자동으로 올리게 하려면 저장소 변수 `EKS_SCHEDULE_ENABLED=true` 를 넣습니다.

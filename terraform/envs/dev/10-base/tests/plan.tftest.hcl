@@ -77,6 +77,16 @@ run "no_domain" {
     condition     = aws_secretsmanager_secret.app["openai"].name == "maemusae/openai" && aws_secretsmanager_secret.app["github-rollback-app"].name == "maemusae/github-rollback-app"
     error_message = "앱 비밀과 롤백 App 키는 External Secrets 가 읽는 maemusae/ 아래에 만든다"
   }
+
+  assert {
+    condition     = aws_sns_topic_subscription.alerts_email.protocol == "email" && aws_sns_topic_subscription.alerts_discord.protocol == "lambda"
+    error_message = "alerts 주제는 메일과 Discord Lambda 로 함께 보낸다"
+  }
+
+  assert {
+    condition     = aws_lambda_function.discord_alerts.runtime == "python3.13" && aws_lambda_function.discord_alerts.architectures == tolist(["arm64"]) && aws_cloudwatch_log_group.discord_alerts.retention_in_days == 14
+    error_message = "Discord Lambda 는 python3.13 arm64, 로그는 14일"
+  }
 }
 
 # subnet id, ARN 은 apply 뒤에 정해져서 plan 에서 비교하려면 값을 정해 둔다
