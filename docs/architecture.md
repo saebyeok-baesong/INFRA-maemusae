@@ -48,12 +48,12 @@ terraform/
 | §5.1 RDS x3, db.t4g.micro, 서브넷 그룹 하나, `manage_master_user_password` | 10-base | `envs/dev/10-base/data.tf` `module.rds` 2개 service, ops (변수 `databases`, `rds_availability_zone`), `aws_db_subnet_group.this` (DB 서브넷만). ops 안의 incident, security DB 와 역할은 `terraform/sql/ops-db-roles.sql` |
 | 문서에 없음. RDS 이벤트 알림 | 10-base | `aws_db_event_subscription.rds` → `aws_sns_topic.alerts` |
 | 문서에 없음. Prometheus 데이터 볼륨 | 10-base | `aws_ebs_volume.prometheus` (변수 `prometheus_volume`). 붙이는 PV 는 gitops 예정 |
-| §5.2 S3 uploads, loki 와 문서에 없는 security-scans (퍼블릭 차단, SSE, 수명 주기) | 10-base | `aws_s3_bucket.this`, `..._public_access_block`, `..._server_side_encryption_configuration`, `..._lifecycle_configuration` |
+| §5.2 S3 uploads, loki 와 문서에 없는 security-scans (퍼블릭 차단, SSE, 수명 주기) | 10-base | `aws_s3_bucket.this` public, private 2개, `..._public_access_block`, `..._server_side_encryption_configuration`, `aws_s3_bucket_policy.public`, `aws_s3_bucket_lifecycle_configuration.private` (접두사표 `local.private_prefixes`). 아래 "S3 버킷" |
 | §6 ECR 4개(web, api, migrate, ops) + 수명 주기 | 10-base | `envs/dev/10-base/services.tf` `aws_ecr_repository.this`, `aws_ecr_lifecycle_policy.this` (변수 `ecr_repositories`) |
 | §6 Secrets Manager | 10-base | `aws_secretsmanager_secret.app` (`maemusae/openai`, `maemusae/discord`). DB 접속 정보는 RDS 가 만드는 마스터 비밀 2개 |
 | §6 SES + DKIM 레코드 | 10-base | `aws_sesv2_email_identity.report`, `aws_route53_record.ses_dkim`. 도메인이 있을 때만 |
 | §6 CloudWatch 경보 | 10-base | `modules/rds/main.tf` `aws_cloudwatch_metric_alarm.this` (DB 마다 CPU, 남은 저장 공간, 연결 수), `aws_sns_topic.alerts` |
-| §6 CloudTrail + S3 | 10-base | `aws_cloudtrail.this`, `aws_s3_bucket.this["cloudtrail"]` |
+| §6 CloudTrail + S3 | 10-base | `aws_cloudtrail.this` (`s3_key_prefix = "cloudtrail"`), `aws_s3_bucket_policy.private` |
 | §6 Budgets 50/70/100% | 10-base | `aws_budgets_budget.monthly` |
 | §6 Route53 영역 | 10-base | 변수 `route53_zone_id`. 비어 있으면 ExternalDNS 와 DKIM 레코드를 만들지 않는다 |
 | §7 EKS 클러스터 역할, 노드 역할 | 20-eks | `modules/eks/main.tf` `aws_iam_role.cluster`, `aws_iam_role.node` |
@@ -77,7 +77,7 @@ terraform/
 | `pod_identities` | 20-eks, 30-platform | 20-eks 는 연결을 만들고, 30-platform 은 서비스 계정 이름을 Helm values 에 넣는다 |
 | `route53_zone_id` | 30-platform, `eks.sh` | ExternalDNS 영역, down 의 레코드 정리 대기 |
 
-20-eks 는 `cluster_name`, `cluster_endpoint`, `cluster_certificate_authority_data` 를 내고 30-platform 의 Helm 공급자가 읽습니다. 나머지 10-base output(`nat_public_ip`, `ecr_repository_urls`, `ecr_push_role_arns`, `security_scan_bucket`, `security_scan_role_arns`, `bucket_names`, `databases`, `prometheus_volume`, `app_secret_names`)은 gitops values 와 다른 레포 CI 설정에 옮겨 적을 값입니다.
+20-eks 는 `cluster_name`, `cluster_endpoint`, `cluster_certificate_authority_data` 를 내고 30-platform 의 Helm 공급자가 읽습니다. 나머지 10-base output(`nat_public_ip`, `ecr_repository_urls`, `ecr_push_role_arns`, `security_scan_bucket`, `security_scan_prefix`, `security_scan_role_arns`, `bucket_names`, `databases`, `prometheus_volume`, `app_secret_names`)은 gitops values 와 다른 레포 CI 설정에 옮겨 적을 값입니다.
 
 `pod_identities` 의 namespace 와 서비스 계정 이름은 Helm values, gitops 매니페스트와의 계약입니다.
 
@@ -85,21 +85,44 @@ terraform/
 | --- | --- | --- |
 | `aws-load-balancer-controller` | `kube-system/aws-load-balancer-controller` | 업스트림 v3.6.3 정책 그대로 |
 | `external-secrets` | `external-secrets/external-secrets` | `maemusae/*` 비밀과 RDS 마스터 비밀 읽기 |
-| `loki` | `monitoring/loki` | Loki 버킷 읽기, 쓰기, 삭제 |
-| `api` | `maemusae/api` | uploads 버킷 읽기, 쓰기, 삭제 |
+| `loki` | `monitoring/loki` | private 버킷 `loki/` 읽기, 쓰기, 삭제 |
+| `api` | `maemusae/api` | public 버킷 전체와 private 버킷 `uploads/` 읽기, 쓰기, 삭제 |
 | `ebs-csi` | `kube-system/ebs-csi-controller-sa` | `AmazonEBSCSIDriverPolicy` |
 | `external-dns` | `external-dns/external-dns` | `route53_zone_id` 영역의 레코드 변경. 영역 ID 가 있을 때만 만든다 |
-| `ops-security-ingest` | `incident/ops-security-ingest` | security-scans 버킷 목록과 객체 읽기, ops DB 에 `security_app` 으로 IAM 접속 |
+| `ops-security-ingest` | `incident/ops-security-ingest` | private 버킷 `security-scans/` 목록과 객체 읽기, ops DB 에 `security_app` 으로 IAM 접속 |
 | `ops` | `incident/ops` | ops DB 에 `incident_app` 으로 IAM 접속 |
 
 ## 보안 스캔 업로드
 
-SERVICE, OPS, INFRA 의 CI 가 스캔 결과 JSON 을 `maemusae-security-scans-<계정 ID>` 버킷에 올리고, incident namespace 의 `ops-security-ingest` 가 읽습니다. 이 이름과 키 형식은 OPS, SPEC 과 맞춘 계약입니다.
+SERVICE, OPS, INFRA 의 CI 가 스캔 결과 JSON 을 `maemusae-private-<계정 ID>` 버킷의 `security-scans/` 아래에 올리고, incident namespace 의 `ops-security-ingest` 가 읽습니다. 이 이름과 키 형식은 OPS, SPEC 과 맞춘 계약입니다.
 
-- 객체 키는 `<저장소>/<도구>/<YYYY-MM-DD>/<github_run_id>.json` 입니다. `<저장소>` 는 `SERVICE-maemusae`, `OPS-maemusae`, `INFRA-maemusae` 중 하나입니다.
-- 저장소마다 역할 `maemusae-gha-scan-<저장소 이름 소문자>` 가 있고, 자기 `<저장소>/*` 아래에만 `s3:PutObject` 할 수 있습니다. 다른 저장소의 결과를 덮어쓰거나 읽지 못합니다.
+- 객체 키는 `security-scans/<저장소>/<도구>/<YYYY-MM-DD>/<github_run_id>.json` 입니다. `<저장소>` 는 `SERVICE-maemusae`, `OPS-maemusae`, `INFRA-maemusae` 중 하나입니다.
+- 저장소마다 역할 `maemusae-gha-scan-<저장소 이름 소문자>` 가 있고, 자기 `security-scans/<저장소>/*` 아래에만 `s3:PutObject` 할 수 있습니다. 다른 저장소의 결과를 덮어쓰거나 읽지 못합니다.
 - trust 는 그 저장소의 `main` 브랜치 push 와 `pull_request` 입니다. fork PR 은 OIDC 토큰을 받지 못하므로 같은 저장소 브랜치의 PR 만 올릴 수 있습니다. 쓰기 권한이 있는 사람이 PR 에서 자기 저장소 접두사 아래에 결과를 꾸며 올릴 수는 있습니다. 결과만 쓰고 지우지 못하므로 받아들입니다.
 - 객체는 90일 뒤 지웁니다(변수 `security_scan_retention_days`).
+
+## S3 버킷
+
+버킷은 둘입니다. 둘 다 SSE-S3 로 암호화하고 `force_destroy = false` 라 객체가 남아 있으면 지워지지 않습니다.
+
+| 버킷 | 접두사 | 쓰는 곳 | 보관 |
+| --- | --- | --- | --- |
+| `maemusae-public-<계정 ID>` | 전체 | 공개 업로드. 누구나 `GetObject` 로 읽는다. 쓰기는 `api` 만 | 지우지 않는다 |
+| `maemusae-private-<계정 ID>` | `uploads/` | 비공개 사용자 파일. `api` 가 presigned URL 로 내준다 | 지우지 않는다 |
+| | `loki/` | Loki 청크와 인덱스 | `loki_retention_days`(14일) |
+| | `cloudtrail/` | CloudTrail 로그 (`cloudtrail/AWSLogs/<계정 ID>/...`) | `cloudtrail_retention_days`(365일) |
+| | `security-scans/` | 보안 스캔 결과. 위 "보안 스캔 업로드" | `security_scan_retention_days`(90일) |
+
+public 버킷은 버킷 정책으로만 공개합니다. 버킷의 퍼블릭 차단은 `block_public_policy`, `restrict_public_buckets` 만 끄고 ACL 차단 두 개는 켜 둡니다. 소유권은 `BucketOwnerEnforced` 라 ACL 을 쓰지 않습니다. 계정 수준 S3 퍼블릭 액세스 차단이 켜져 있으면 버킷 설정보다 우선해서 정책을 넣을 수 없고 공개도 되지 않습니다. 10-base 를 적용하기 전에 계정 수준 차단의 `BlockPublicPolicy`, `RestrictPublicBuckets` 가 꺼져 있는지 확인합니다(`aws s3control get-public-access-block --account-id <계정 ID>`).
+
+private 버킷의 Pod Identity 정책은 접두사로 나눕니다. 객체 권한은 `<접두사>/*` 에만 있고, `s3:ListBucket` 은 `s3:prefix` 조건으로 자기 접두사 목록만 볼 수 있습니다. 수명 주기 규칙은 접두사마다 하나이고, 끝나지 않은 멀티파트 업로드는 버킷 전체에서 하루 뒤 지웁니다.
+
+Loki 는 3.4 부터 `storage_config.object_prefix` 로 모든 객체 키 앞에 접두사를 붙입니다(실험 기능, 기본 클라이언트 `use_thanos_objstore: false` 기준). gitops 의 Loki values 에서 버킷을 private 으로 두고 접두사를 `loki/` 로 줍니다. 접두사가 빠지면 Loki 가 버킷 루트에 쓰려다 IAM 에서 거부됩니다.
+
+```yaml
+storage_config:
+  object_prefix: loki/
+```
 
 ECR push 역할에 이 권한을 더하지 않고 역할을 따로 둔 이유는 trust 가 달라서입니다. push 역할은 `main` 만 믿는데 스캔은 PR 에서도 돕니다. 합치면 PR 이 이미지를 push 할 수 있게 되거나, 스캔이 `main` 에서만 돕니다. INFRA 는 push 역할이 없고 plan, apply 역할은 권한이 넓어서 같은 형태의 작은 역할을 하나 둡니다.
 
@@ -209,7 +232,7 @@ psycopg.connect(host=host, dbname="incident", user="incident_app", password=toke
 | §4.3 approvals 에 Argo CD 롤백 권한 필요 | Argo CD 권한을 주지 않는다. approvals 는 INFRA 레포에 revert PR 을 열고 merge 해서 되돌린다 | Git 이 배포 기록의 원본으로 남는다. IAM 이나 Argo CD RBAC 설정이 필요 없다 |
 | §6 ECR 이미지 FE, BE, webhook, worker, approvals, migrate | `web`, `api`, `migrate`(SERVICE 가 push), `ops`(OPS 가 push) 4개 | OPS 는 이미지 하나에 진입점 api, worker, approvals 를 둔다. 운영 결정 표 참고 |
 | §6 Secrets Manager 에 OpenAI 키, Discord 웹훅, DB 접속 정보 | `maemusae/openai`, `maemusae/discord`(봇 토큰), `maemusae/github-rollback-app`(롤백 App private key)와 RDS 마스터 비밀 | Discord 는 웹훅 대신 승인 봇의 토큰을 둔다. 롤백 App 은 approvals 가 INFRA 에 PR 을 열고 merge 할 때 쓴다 |
-| 문서에 없음 | security-scans 버킷, 저장소별 스캔 업로드 역할, `ops-security-ingest` Pod Identity | 위 "보안 스캔 업로드" |
+| 문서에 없음 | private 버킷의 `security-scans/`, 저장소별 스캔 업로드 역할, `ops-security-ingest` Pod Identity | 위 "보안 스캔 업로드" |
 | §6 CloudWatch NLB 지표 | RDS 경보만 만든다 | 위 "NLB 경보는 미리 만들 수 없습니다" |
 | §6 CloudWatch 로그 그룹 | 만들지 않는다 | 앱과 플랫폼 로그는 Loki 로 간다. 컨트롤 플레인 로그는 매일 지우는 클러스터라 끈다 |
 | 문서에 없음 | DB 전용 서브넷 2a, 2c 와 기본 경로 없는 라우팅 테이블 | 위 "RDS 는 DB 전용 서브넷에 있습니다" |
@@ -236,7 +259,7 @@ psycopg.connect(host=host, dbname="incident", user="incident_app", password=toke
 | approvals 롤백 | Argo CD 롤백이 아니라 INFRA PR merge 로 되돌린다. GitHub App 을 둘로 나눈다. image-PR App 은 CI 가 이미지 태그 PR 을 열 때, 롤백 App 은 클러스터 안 approvals 봇이 쓴다. Discord 승인이 PR 리뷰를 대신하므로 롤백 App 만 `main` ruleset 우회 목록에 넣는다. 설치 범위, 권한, 키 보관은 README 의 GitHub 설정 체크리스트대로 한다. App 과 ruleset 은 아직 만들지 않았다 | 우회 범위를 넓히거나 다른 주체를 우회 목록에 넣을 때. 보안팀 리뷰를 거친다 |
 | 승인 역할 | Discord 승인자는 처음에 풀스택, 인프라, 보안팀 역할이다. 역할 ID 는 비밀이 아니라 OPS 설정이고, `maemusae/discord` 에는 봇 토큰만 둔다 | 승인자를 좁힐 때 OPS 설정만 바꾼다 |
 | ECR 저장소 | `web`, `api`, `migrate` 는 SERVICE, `ops` 는 OPS 가 push 한다. OPS 는 이미지 하나에 진입점 api, worker, approvals 를 둔다 | OPS 가 이미지를 나누면 `ecr_repositories` 에 줄을 더한다 |
-| 보안 스캔 결과 | S3 `maemusae-security-scans-<계정 ID>` 에 올리고 90일 보관한다. 키 형식과 역할은 위 "보안 스캔 업로드" | 보관 기간이나 올리는 저장소가 바뀔 때 |
+| 보안 스캔 결과 | S3 `maemusae-private-<계정 ID>` 의 `security-scans/` 에 올리고 90일 보관한다. 키 형식과 역할은 위 "보안 스캔 업로드" | 보관 기간이나 올리는 저장소가 바뀔 때 |
 | Redis | ElastiCache 가 아니라 클러스터 안 StatefulSet. Terraform 에 없다. 클러스터를 매일 지우므로 장애 큐 데이터가 그때 사라지는 것을 받아들인다 | 큐 데이터를 하루 넘게 보존해야 할 때 ElastiCache 나 10-base 의 영속 저장소를 검토한다 |
 | DB 서브넷 | RDS 는 DB 전용 서브넷 2a, 2c 에 둔다. 라우팅 테이블에 기본 경로가 없어 NAT 나 IGW 로 나갈 수 없다. 노드 서브넷과 RDS 보안 그룹(노드에서 오는 5432)은 그대로다 | RDS 가 외부(예: S3 내보내기)에 닿아야 할 때 VPC endpoint 를 DB 라우팅 테이블에 더한다 |
 | RDS AZ | RDS 2개를 2a 에 둔다(`rds_availability_zone`). app 노드와 같은 AZ 라 AZ 간 지연과 전송 요금이 없다. 서브넷 그룹은 2a, 2c 를 유지하고 Multi-AZ 는 끈다 | 운영 트래픽을 받거나 2a 장애를 견뎌야 할 때 service DB 부터 Multi-AZ 를 켠다 |

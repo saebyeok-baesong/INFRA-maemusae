@@ -143,10 +143,10 @@ locals {
   trail_arn = "arn:aws:cloudtrail:${var.region}:${var.aws_account_id}:trail/${var.name}"
 }
 
-data "aws_iam_policy_document" "cloudtrail_bucket" {
+data "aws_iam_policy_document" "private_bucket" {
   statement {
     actions   = ["s3:GetBucketAcl"]
-    resources = [aws_s3_bucket.this["cloudtrail"].arn]
+    resources = [aws_s3_bucket.this["private"].arn]
     principals {
       type        = "Service"
       identifiers = ["cloudtrail.amazonaws.com"]
@@ -160,7 +160,7 @@ data "aws_iam_policy_document" "cloudtrail_bucket" {
 
   statement {
     actions   = ["s3:PutObject"]
-    resources = ["${aws_s3_bucket.this["cloudtrail"].arn}/AWSLogs/${var.aws_account_id}/*"]
+    resources = ["${aws_s3_bucket.this["private"].arn}/cloudtrail/AWSLogs/${var.aws_account_id}/*"]
     principals {
       type        = "Service"
       identifiers = ["cloudtrail.amazonaws.com"]
@@ -178,19 +178,20 @@ data "aws_iam_policy_document" "cloudtrail_bucket" {
   }
 }
 
-resource "aws_s3_bucket_policy" "cloudtrail" {
-  bucket = aws_s3_bucket.this["cloudtrail"].id
-  policy = data.aws_iam_policy_document.cloudtrail_bucket.json
+resource "aws_s3_bucket_policy" "private" {
+  bucket = aws_s3_bucket.this["private"].id
+  policy = data.aws_iam_policy_document.private_bucket.json
 }
 
 resource "aws_cloudtrail" "this" {
   name                          = var.name
-  s3_bucket_name                = aws_s3_bucket.this["cloudtrail"].id
+  s3_bucket_name                = aws_s3_bucket.this["private"].id
+  s3_key_prefix                 = "cloudtrail"
   is_multi_region_trail         = true
   include_global_service_events = true
   enable_log_file_validation    = true
 
-  depends_on = [aws_s3_bucket_policy.cloudtrail]
+  depends_on = [aws_s3_bucket_policy.private]
 }
 
 resource "aws_budgets_budget" "monthly" {

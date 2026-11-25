@@ -4,12 +4,13 @@
     {
       "Effect": "Allow",
       "Action": ["s3:ListBucket"],
-      "Resource": "${scans_bucket_arn}"
+      "Resource": "${private_bucket_arn}",
+      "Condition": { "StringLike": { "s3:prefix": ["security-scans/*"] } }
     },
     {
       "Effect": "Allow",
       "Action": ["s3:GetObject"],
-      "Resource": "${scans_bucket_arn}/*"
+      "Resource": "${private_bucket_arn}/security-scans/*"
     },
     {
       "Effect": "Allow",

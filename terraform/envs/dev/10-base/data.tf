@@ -55,33 +55,24 @@ resource "aws_ebs_volume" "prometheus" {
   }
 }
 
-locals {
-  # expire_days = null 이면 객체를 지우지 않는다
-  buckets = {
-    uploads    = { force_destroy = false, expire_days = null }
-    loki       = { force_destroy = true, expire_days = var.loki_retention_days }
-    cloudtrail = { force_destroy = false, expire_days = var.cloudtrail_retention_days }
-    # SERVICE, OPS, INFRA CI 가 올리고 incident 의 ops-security-ingest 가 읽는다
-    security-scans = { force_destroy = false, expire_days = var.security_scan_retention_days }
-  }
-}
-
+# public 은 누구나 읽는 공개 업로드, private 은 접두사로 나눈 나머지 전부다
 resource "aws_s3_bucket" "this" {
-  for_each = local.buckets
+  for_each = toset(["public", "private"])
 
   bucket        = "${var.name}-${each.key}-${var.aws_account_id}"
-  force_destroy = each.value.force_destroy
+  force_destroy = false
 }
 
+# public 버킷만 버킷 정책으로 공개한다. ACL 로는 공개하지 않는다
 resource "aws_s3_bucket_public_access_block" "this" {
   for_each = aws_s3_bucket.this
 
   bucket = each.value.id
 
   block_public_acls       = true
-  block_public_policy     = true
+  block_public_policy     = each.key != "public"
   ignore_public_acls      = true
-  restrict_public_buckets = true
+  restrict_public_buckets = each.key != "public"
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "this" {
@@ -96,19 +87,67 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "this" {
   }
 }
 
-resource "aws_s3_bucket_lifecycle_configuration" "this" {
-  for_each = { for k, v in local.buckets : k => v if v.expire_days != null }
-
-  bucket = aws_s3_bucket.this[each.key].id
+resource "aws_s3_bucket_ownership_controls" "public" {
+  bucket = aws_s3_bucket.this["public"].id
 
   rule {
-    id     = "expire"
+    object_ownership = "BucketOwnerEnforced"
+  }
+}
+
+data "aws_iam_policy_document" "public_bucket" {
+  statement {
+    actions   = ["s3:GetObject"]
+    resources = ["${aws_s3_bucket.this["public"].arn}/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+  }
+}
+
+# 퍼블릭 차단을 먼저 풀어야 공개 정책을 넣을 수 있다
+resource "aws_s3_bucket_policy" "public" {
+  bucket = aws_s3_bucket.this["public"].id
+  policy = data.aws_iam_policy_document.public_bucket.json
+
+  depends_on = [aws_s3_bucket_public_access_block.this]
+}
+
+locals {
+  # private 버킷의 접두사 => 객체 보존 기간(일). null 이면 지우지 않는다
+  private_prefixes = {
+    "uploads/"    = null
+    "loki/"       = var.loki_retention_days
+    "cloudtrail/" = var.cloudtrail_retention_days
+    # SERVICE, OPS, INFRA CI 가 올리고 incident 의 ops-security-ingest 가 읽는다
+    "security-scans/" = var.security_scan_retention_days
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "private" {
+  bucket = aws_s3_bucket.this["private"].id
+
+  dynamic "rule" {
+    for_each = { for prefix, days in local.private_prefixes : prefix => days if days != null }
+    content {
+      id     = "expire-${trimsuffix(rule.key, "/")}"
+      status = "Enabled"
+
+      filter {
+        prefix = rule.key
+      }
+
+      expiration {
+        days = rule.value
+      }
+    }
+  }
+
+  rule {
+    id     = "abort-multipart"
     status = "Enabled"
     filter {}
-
-    expiration {
-      days = each.value.expire_days
-    }
 
     abort_incomplete_multipart_upload {
       days_after_initiation = 1

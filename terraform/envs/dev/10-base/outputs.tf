@@ -55,8 +55,12 @@ output "ecr_push_role_arns" {
 }
 
 output "security_scan_bucket" {
-  description = "스캔 결과 버킷. 키는 <저장소 이름>/<도구>/<YYYY-MM-DD>/<github_run_id>.json"
-  value       = aws_s3_bucket.this["security-scans"].bucket
+  description = "스캔 결과 버킷. 키는 security-scans/<저장소 이름>/<도구>/<YYYY-MM-DD>/<github_run_id>.json"
+  value       = aws_s3_bucket.this["private"].bucket
+}
+
+output "security_scan_prefix" {
+  value = "security-scans/"
 }
 
 output "security_scan_role_arns" {

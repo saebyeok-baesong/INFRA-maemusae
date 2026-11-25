@@ -4,12 +4,18 @@
     {
       "Effect": "Allow",
       "Action": ["s3:ListBucket"],
-      "Resource": "${uploads_bucket_arn}"
+      "Resource": "${public_bucket_arn}"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": "${private_bucket_arn}",
+      "Condition": { "StringLike": { "s3:prefix": ["uploads/*"] } }
     },
     {
       "Effect": "Allow",
       "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
-      "Resource": "${uploads_bucket_arn}/*"
+      "Resource": ["${public_bucket_arn}/*", "${private_bucket_arn}/uploads/*"]
     }
   ]
 }

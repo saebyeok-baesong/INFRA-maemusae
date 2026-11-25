@@ -152,7 +152,7 @@ variable "app_secrets" {
 }
 
 variable "security_scan_repositories" {
-  description = "보안 스캔 결과를 security-scans 버킷의 <저장소 이름>/ 아래에 올릴 GitHub 저장소 (owner/repo)"
+  description = "보안 스캔 결과를 private 버킷의 security-scans/<저장소 이름>/ 아래에 올릴 GitHub 저장소 (owner/repo)"
   type        = list(string)
   default = [
     "saebyeok-baesong/SERVICE-maemusae",
@@ -162,19 +162,19 @@ variable "security_scan_repositories" {
 }
 
 variable "security_scan_retention_days" {
-  description = "security-scans 버킷 객체 보존 기간(일)"
+  description = "private 버킷 security-scans/ 객체 보존 기간(일)"
   type        = number
   default     = 90
 }
 
 variable "loki_retention_days" {
-  description = "Loki 버킷 객체 보존 기간(일)"
+  description = "private 버킷 loki/ 객체 보존 기간(일)"
   type        = number
   default     = 14
 }
 
 variable "cloudtrail_retention_days" {
-  description = "CloudTrail 버킷 객체 보존 기간(일)"
+  description = "private 버킷 cloudtrail/ 객체 보존 기간(일)"
   type        = number
   default     = 365
 }

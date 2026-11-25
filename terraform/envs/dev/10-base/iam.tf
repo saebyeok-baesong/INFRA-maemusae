@@ -5,9 +5,8 @@ locals {
   policy_dir = "${path.module}/../../../../iam/policies"
 
   policy_vars = {
-    loki_bucket_arn    = aws_s3_bucket.this["loki"].arn
-    uploads_bucket_arn = aws_s3_bucket.this["uploads"].arn
-    scans_bucket_arn   = aws_s3_bucket.this["security-scans"].arn
+    public_bucket_arn  = aws_s3_bucket.this["public"].arn
+    private_bucket_arn = aws_s3_bucket.this["private"].arn
     hosted_zone_arn    = "arn:aws:route53:::hostedzone/${var.route53_zone_id}"
     ops_dbuser_arn     = "arn:aws:rds-db:${var.region}:${var.aws_account_id}:dbuser:${module.rds["ops"].resource_id}"
     secret_arns = concat(
@@ -123,7 +122,7 @@ resource "aws_iam_role_policy" "scan_upload" {
   name = "security-scan-upload"
   role = aws_iam_role.scan_upload[each.key].id
   policy = templatefile("${local.policy_dir}/github-security-scan-upload.json.tftpl", {
-    scans_bucket_arn = aws_s3_bucket.this["security-scans"].arn
-    repo             = split("/", each.key)[1]
+    private_bucket_arn = aws_s3_bucket.this["private"].arn
+    repo               = split("/", each.key)[1]
   })
 }

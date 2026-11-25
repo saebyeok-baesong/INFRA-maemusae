@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | `terraform/bootstrap/` | state 버킷, GitHub OIDC 공급자, INFRA plan/apply 역할. 계정마다 한 번 적용 | infra |
 | `terraform/modules/` | `network`, `rds`, `eks`, `pod-identity`, `platform`. 아래 층들이 부르는 모듈 | infra |
-| `terraform/envs/dev/10-base/` | 늘 켜 두는 층. VPC, DB 전용 서브넷, NAT 용 EIP, RDS 2개(service, ops)와 경보, RDS 이벤트 구독, Prometheus 데이터용 EBS 볼륨, S3, ECR, Secrets Manager, SES, CloudTrail, 예산, Pod Identity 역할, ECR push 역할, 보안 스캔 업로드 역할 | infra |
+| `terraform/envs/dev/10-base/` | 늘 켜 두는 층. VPC, DB 전용 서브넷, NAT 용 EIP, RDS 2개(service, ops)와 경보, RDS 이벤트 구독, Prometheus 데이터용 EBS 볼륨, S3 2개(public, private), ECR, Secrets Manager, SES, CloudTrail, 예산, Pod Identity 역할, ECR push 역할, 보안 스캔 업로드 역할 | infra |
 | `terraform/envs/dev/20-eks/` | 코어타임 층. NAT Gateway, EKS, 노드그룹 2개, 애드온, Pod Identity 연결 | infra |
 | `terraform/envs/dev/30-platform/` | 코어타임 층. LB Controller, External Secrets, ExternalDNS(도메인이 있을 때), Argo CD | infra |
 | `terraform/eks.sh` | 코어타임 층 올리기, 내리기, 남은 리소스 확인 | infra |
@@ -58,7 +58,7 @@ export TF_VAR_alert_email=<예산 알림, RDS 경보와 이벤트를 받을 메�
 	terraform/eks.sh up
 	```
 
-6. 10-base output 을 다른 레포 설정에 옮깁니다. `ecr_push_role_arns` 와 `security_scan_role_arns` 는 각 저장소 CI 가 assume 할 역할, `security_scan_bucket` 은 스캔 결과를 올릴 버킷입니다. `prometheus_volume.id` 는 gitops 의 Prometheus 정적 PV 에 넣습니다([docs/architecture.md](docs/architecture.md#prometheus-데이터-볼륨)).
+6. 10-base output 을 다른 레포 설정에 옮깁니다. `ecr_push_role_arns` 와 `security_scan_role_arns` 는 각 저장소 CI 가 assume 할 역할, `security_scan_bucket` 과 `security_scan_prefix` 는 스캔 결과를 올릴 버킷과 접두사입니다. `prometheus_volume.id` 는 gitops 의 Prometheus 정적 PV 에 넣습니다([docs/architecture.md](docs/architecture.md#prometheus-데이터-볼륨)).
 
 bootstrap state 를 S3 로 옮기려면 `terraform/bootstrap/versions.tf` 에 `backend "s3" {}` 를 더하고 key `bootstrap/terraform.tfstate` 로 `init -migrate-state` 합니다.
 

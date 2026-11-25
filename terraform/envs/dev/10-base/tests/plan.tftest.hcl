@@ -49,18 +49,38 @@ run "no_domain" {
   }
 
   assert {
-    condition     = keys(aws_s3_bucket_lifecycle_configuration.this) == ["cloudtrail", "loki", "security-scans"]
-    error_message = "uploads 버킷은 만료 규칙이 없다"
+    condition     = aws_s3_bucket.this["public"].bucket == "maemusae-public-123456789012" && aws_s3_bucket.this["private"].bucket == "maemusae-private-123456789012" && alltrue([for b in aws_s3_bucket.this : !b.force_destroy])
+    error_message = "버킷은 public, private 2개이고 객체가 있으면 지우지 않는다"
   }
 
   assert {
-    condition     = keys(aws_s3_bucket_server_side_encryption_configuration.this) == ["cloudtrail", "loki", "security-scans", "uploads"] && keys(aws_s3_bucket_public_access_block.this) == keys(aws_s3_bucket.this)
-    error_message = "모든 버킷에 SSE 와 퍼블릭 차단"
+    condition     = keys(aws_s3_bucket_server_side_encryption_configuration.this) == ["private", "public"] && keys(aws_s3_bucket_public_access_block.this) == keys(aws_s3_bucket.this)
+    error_message = "모든 버킷에 SSE 와 퍼블릭 차단 설정"
   }
 
   assert {
-    condition     = aws_s3_bucket.this["security-scans"].bucket == "maemusae-security-scans-123456789012" && one(aws_s3_bucket_lifecycle_configuration.this["security-scans"].rule).expiration[0].days == 90
-    error_message = "스캔 버킷은 OPS, SPEC 과 맞춘 이름이고 90일 뒤 지운다"
+    condition = (
+      aws_s3_bucket_public_access_block.this["private"].block_public_policy && aws_s3_bucket_public_access_block.this["private"].restrict_public_buckets &&
+      !aws_s3_bucket_public_access_block.this["public"].block_public_policy && !aws_s3_bucket_public_access_block.this["public"].restrict_public_buckets &&
+      alltrue([for b in aws_s3_bucket_public_access_block.this : b.block_public_acls && b.ignore_public_acls])
+    )
+    error_message = "public 만 버킷 정책으로 공개하고 ACL 공개는 둘 다 막는다"
+  }
+
+  assert {
+    condition = {
+      for r in aws_s3_bucket_lifecycle_configuration.private.rule : r.id => [one(r.filter).prefix, try(one(r.expiration).days, null)] if length(r.expiration) > 0
+      } == {
+      expire-cloudtrail     = ["cloudtrail/", 365]
+      expire-loki           = ["loki/", 14]
+      expire-security-scans = ["security-scans/", 90]
+    }
+    error_message = "private 은 접두사마다 만료 규칙이 있고 uploads/ 는 지우지 않는다"
+  }
+
+  assert {
+    condition     = aws_cloudtrail.this.s3_key_prefix == "cloudtrail" && output.security_scan_prefix == "security-scans/"
+    error_message = "CloudTrail 과 스캔 결과는 private 버킷의 접두사 아래에 쌓인다"
   }
 
   assert {
@@ -185,13 +205,32 @@ run "prometheus_volume" {
   }
 }
 
-run "scan_upload_prefix" {
+run "private_prefixes" {
   command = plan
 
   override_resource {
-    target          = aws_s3_bucket.this["security-scans"]
+    target          = aws_s3_bucket.this["private"]
     override_during = plan
-    values          = { arn = "arn:aws:s3:::maemusae-security-scans-123456789012" }
+    values          = { arn = "arn:aws:s3:::maemusae-private-123456789012" }
+  }
+
+  override_resource {
+    target          = aws_s3_bucket.this["public"]
+    override_during = plan
+    values          = { arn = "arn:aws:s3:::maemusae-public-123456789012" }
+  }
+
+  # 정책 템플릿 변수에 RDS 리소스 ID 와 마스터 비밀 ARN 도 들어간다
+  override_resource {
+    target          = module.rds["ops"].aws_db_instance.this
+    override_during = plan
+    values          = { resource_id = "db-OPS", master_user_secret = [{ secret_arn = "arn:aws:secretsmanager:ap-northeast-2:123456789012:secret:rds!maemusae-ops" }] }
+  }
+
+  override_resource {
+    target          = module.rds["service"].aws_db_instance.this
+    override_during = plan
+    values          = { master_user_secret = [{ secret_arn = "arn:aws:secretsmanager:ap-northeast-2:123456789012:secret:rds!maemusae-service" }] }
   }
 
   assert {
@@ -199,10 +238,28 @@ run "scan_upload_prefix" {
       for repo, p in aws_iam_role_policy.scan_upload : jsondecode(p.policy).Statement == [{
         Effect   = "Allow"
         Action   = ["s3:PutObject"]
-        Resource = "arn:aws:s3:::maemusae-security-scans-123456789012/${split("/", repo)[1]}/*"
+        Resource = "arn:aws:s3:::maemusae-private-123456789012/security-scans/${split("/", repo)[1]}/*"
       }]
     ])
-    error_message = "저장소마다 자기 <저장소 이름>/ 아래에만 PutObject"
+    error_message = "저장소마다 자기 security-scans/<저장소 이름>/ 아래에만 PutObject"
+  }
+
+  assert {
+    condition     = jsondecode(templatefile("${local.policy_dir}/api.json.tftpl", local.policy_vars)).Statement[2].Resource == ["arn:aws:s3:::maemusae-public-123456789012/*", "arn:aws:s3:::maemusae-private-123456789012/uploads/*"]
+    error_message = "api 는 public 전체와 private uploads/ 를 읽고 쓴다"
+  }
+
+  assert {
+    condition = alltrue([
+      for f, prefix in { "api.json.tftpl" = "uploads/*", "loki.json.tftpl" = "loki/*", "ops-security-ingest.json.tftpl" = "security-scans/*" } :
+      contains([for st in jsondecode(templatefile("${local.policy_dir}/${f}", local.policy_vars)).Statement : try(st.Condition.StringLike["s3:prefix"], null) if st.Resource == "arn:aws:s3:::maemusae-private-123456789012"], [prefix])
+    ])
+    error_message = "private 버킷 목록은 자기 접두사로만 볼 수 있다"
+  }
+
+  assert {
+    condition     = jsondecode(templatefile("${local.policy_dir}/loki.json.tftpl", local.policy_vars)).Statement[1].Resource == "arn:aws:s3:::maemusae-private-123456789012/loki/*" && jsondecode(templatefile("${local.policy_dir}/ops-security-ingest.json.tftpl", local.policy_vars)).Statement[1].Resource == "arn:aws:s3:::maemusae-private-123456789012/security-scans/*"
+    error_message = "loki 는 loki/, 스캔 수집기는 security-scans/ 객체만"
   }
 }
 

@@ -4,12 +4,13 @@
     {
       "Effect": "Allow",
       "Action": ["s3:ListBucket"],
-      "Resource": "${loki_bucket_arn}"
+      "Resource": "${private_bucket_arn}",
+      "Condition": { "StringLike": { "s3:prefix": ["loki/*"] } }
     },
     {
       "Effect": "Allow",
       "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
-      "Resource": "${loki_bucket_arn}/*"
+      "Resource": "${private_bucket_arn}/loki/*"
     }
   ]
 }
