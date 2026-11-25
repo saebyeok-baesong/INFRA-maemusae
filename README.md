@@ -83,12 +83,14 @@ GitHub App 은 두 개로 나눕니다. 하나는 CI 가 이미지 태그 PR 을
 
 | 명령 | 하는 일 |
 | --- | --- |
-| `eks.sh up` | 20-eks apply, 노드 Ready 대기, 30-platform apply |
-| `eks.sh down` | Argo CD 앱 삭제, LoadBalancer Service 와 PVC 정리, ExternalDNS 레코드가 지워질 때까지 대기, 30-platform destroy, 20-eks destroy, 남은 리소스 확인 |
-| `eks.sh sweep` | 코어타임 밖이면 `down`. 매시 5분, 35분에 스케줄이 부릅니다 |
+| `eks.sh up` | ops RDS 시작과 available 대기, 20-eks apply, 노드 Ready 대기, 30-platform apply |
+| `eks.sh down` | Argo CD 앱 삭제, LoadBalancer Service 와 PVC 정리, ExternalDNS 레코드가 지워질 때까지 대기, 30-platform destroy, 20-eks destroy, ops RDS 정지, 남은 리소스 확인 |
+| `eks.sh sweep` | 코어타임 밖이면 `down`. 층이 이미 없으면 ops RDS 만 정지합니다. 매시 5분, 35분에 스케줄이 부릅니다 |
 | `eks.sh leftovers` | `Layer=eks` 태그(NAT Gateway 포함), LB Controller 태그, VPC CNI ENI 가 남았는지 확인 |
 
 코어타임은 평일 13:40 부터 17:30 까지(KST)입니다. `UP_AT`, `CORE_END` 환경 변수로 바꿉니다. 저장소 변수 `EKS_HOLD_UNTIL` 에 `2026-11-24T21:00` 처럼 오늘 날짜와 시각을 넣으면 그날만 `HOLD_MAX`(기본 22:00)까지 늘어납니다.
+
+ops RDS 는 코어타임에만 켭니다. service RDS 는 늘 켜 둡니다. `up`, `down` 은 ops 의 지금 상태를 먼저 읽고 다를 때만 시작하거나 정지해서, 이미 켜져 있거나 꺼져 있으면 넘어갑니다. RDS 는 정지 7일 뒤 스스로 켜지는데, 그 이벤트(RDS-EVENT-0154)는 Discord 로 알리고 다음 `sweep` 이 다시 끕니다.
 
 `down` 은 층을 지우기 전에 클러스터 안부터 정리합니다. NLB 는 LB Controller 가, Route53 레코드는 ExternalDNS 가 만들어서, 두 컨트롤러가 살아 있을 때 Service 를 지워야 NLB 와 레코드도 지워집니다. 클러스터가 이미 없으면 30-platform state 의 Helm 릴리스만 비우고 20-eks 를 destroy 합니다.
 

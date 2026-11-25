@@ -10,6 +10,7 @@ EKS="$ENV_DIR/20-eks"
 PLATFORM="$ENV_DIR/30-platform"
 NAME="${NAME:-maemusae}"
 REGION="${AWS_REGION:-ap-northeast-2}"
+OPS_DB="$NAME-ops"
 
 # 코어타임(KST). UP_AT 은 eks.yml 의 올리기 cron 과 같은 시각이어야 한다
 UP_AT="${UP_AT:-13:40}"
@@ -19,11 +20,11 @@ HOLD_MAX="${HOLD_MAX:-22:00}"
 usage() {
   cat >&2 <<'USAGE'
 usage:
-  eks.sh up                 20-eks apply -> 노드 Ready -> 30-platform apply
-  eks.sh down               Argo CD 앱 삭제 -> LoadBalancer, PVC, ExternalDNS 레코드 정리 -> 30-platform, 20-eks destroy -> leftovers
+  eks.sh up                 ops DB 시작 -> 20-eks apply -> 노드 Ready -> 30-platform apply
+  eks.sh down               Argo CD 앱 삭제 -> LoadBalancer, PVC, ExternalDNS 레코드 정리 -> 30-platform, 20-eks destroy -> ops DB 정지 -> leftovers
   eks.sh drain              KUBECONFIG 클러스터에서 down 의 클러스터 안 정리만 한다
   eks.sh leftovers          코어타임 층 리소스가 남았는지 확인한다 (남으면 exit 1)
-  eks.sh sweep              코어타임 밖이고 코어타임 층이 남아 있으면 down (몇 번 돌아도 같은 상태로 수렴)
+  eks.sh sweep              코어타임 밖이고 코어타임 층이나 켜진 ops DB 가 남아 있으면 down (몇 번 돌아도 같은 상태로 수렴)
   eks.sh keep-up <요일1-7> <HH:MM> <YYYY-MM-DD> [hold]   지금 클러스터를 유지할 시간인지 (0 = 유지)
 USAGE
   exit 2
@@ -64,6 +65,37 @@ ensure_endpoint_access() {
   [[ "$status" == Successful ]] || die "endpoint update $id: $status"
 }
 
+ops_db_status() {
+  aws rds describe-db-instances --region "$REGION" --db-instance-identifier "$OPS_DB" \
+    --query 'DBInstances[0].DBInstanceStatus' --output text
+}
+
+# ops DB 는 코어타임에만 켠다. 지금 상태를 먼저 읽고 다를 때만 바꿔서 up, down, sweep 을 다시 돌려도 같은 상태가 된다
+ops_db_up() {
+  local status
+  status="$(ops_db_status)"
+  # 정지 중에는 시작 요청이 실패한다
+  while [[ "$status" == stopping ]]; do
+    sleep 15
+    status="$(ops_db_status)"
+  done
+  if [[ "$status" == stopped ]]; then
+    log "starting $OPS_DB"
+    aws rds start-db-instance --region "$REGION" --db-instance-identifier "$OPS_DB" >/dev/null
+  fi
+  aws rds wait db-instance-available --region "$REGION" --db-instance-identifier "$OPS_DB"
+}
+
+ops_db_down() {
+  case "$(ops_db_status)" in
+    stopped | stopping) return ;;
+  esac
+  # available 이 아닐 때(시작 중, 백업 중)는 정지 요청이 실패한다
+  aws rds wait db-instance-available --region "$REGION" --db-instance-identifier "$OPS_DB"
+  log "stopping $OPS_DB"
+  aws rds stop-db-instance --region "$REGION" --db-instance-identifier "$OPS_DB" >/dev/null
+}
+
 kubeconfig() {
   # 운영자의 ~/.kube/config 를 건드리지 않는다
   KUBECONFIG="$(mktemp)"
@@ -73,6 +105,7 @@ kubeconfig() {
 
 up() {
   local start=$SECONDS
+  ops_db_up
   tf_init "$EKS"
   terraform -chdir="$EKS" apply -input=false -auto-approve -lock-timeout=5m -var "caller_cidr=$(caller_cidr)"
   kubeconfig
@@ -154,6 +187,7 @@ down() {
   fi
   tf_init "$EKS"
   terraform -chdir="$EKS" destroy -input=false -auto-approve -lock-timeout=5m -var "caller_cidr=$(caller_cidr)"
+  ops_db_down
   log "down took $((SECONDS - start))s"
   leftovers
 }
@@ -208,6 +242,7 @@ sweep() {
   if keep_up "$(TZ=Asia/Seoul date +%u)" "$(TZ=Asia/Seoul date +%H:%M)" "$(TZ=Asia/Seoul date +%F)" "${EKS_HOLD_UNTIL:-}"; then
     log "inside core time (hold: ${EKS_HOLD_UNTIL:-none}), keeping cluster"
   elif leftovers >/dev/null && [[ "$(cluster_status)" == NONE ]]; then
+    ops_db_down
     log "outside core time, nothing left"
   else
     down
