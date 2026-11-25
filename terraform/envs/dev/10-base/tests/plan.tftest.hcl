@@ -34,7 +34,7 @@ run "no_domain" {
   }
 
   assert {
-    condition     = keys(aws_iam_role.ecr_push) == ["saebyeok-baesong/OPS-maemusae", "saebyeok-baesong/SERVICE-maemusae"]
+    condition     = keys(aws_iam_role.ecr_push) == ["saebyeok-baesong/OPS-watch-nyang", "saebyeok-baesong/SERVICE-watch-nyang"]
     error_message = "ECR push 역할은 GitHub 저장소마다 하나"
   }
 
@@ -94,7 +94,7 @@ run "no_domain" {
   }
 
   assert {
-    condition     = keys(aws_iam_role.scan_upload) == ["saebyeok-baesong/INFRA-maemusae", "saebyeok-baesong/OPS-maemusae", "saebyeok-baesong/SERVICE-maemusae"]
+    condition     = keys(aws_iam_role.scan_upload) == ["saebyeok-baesong/INFRA-watch-nyang", "saebyeok-baesong/OPS-watch-nyang", "saebyeok-baesong/SERVICE-watch-nyang"]
     error_message = "스캔 업로드 역할은 SERVICE, OPS, INFRA 마다 하나"
   }
 
@@ -295,7 +295,7 @@ run "trim_lists" {
   command = plan
 
   variables {
-    ecr_repositories = { web = "saebyeok-baesong/SERVICE-maemusae", ops = "saebyeok-baesong/OPS-maemusae" }
+    ecr_repositories = { web = "saebyeok-baesong/SERVICE-watch-nyang", ops = "saebyeok-baesong/OPS-watch-nyang" }
     databases        = { ops = {} }
   }
 

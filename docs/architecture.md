@@ -99,7 +99,7 @@ terraform/
 
 SERVICE, OPS, INFRA 의 CI 가 스캔 결과 JSON 을 `maemusae-private-<계정 ID>` 버킷의 `security-scans/` 아래에 올리고, incident namespace 의 `ops-security-ingest` 가 읽습니다. 이 이름과 키 형식은 OPS, SPEC 과 맞춘 계약입니다.
 
-- 객체 키는 `security-scans/<저장소>/<도구>/<YYYY-MM-DD>/<github_run_id>.json` 입니다. `<저장소>` 는 `SERVICE-maemusae`, `OPS-maemusae`, `INFRA-maemusae` 중 하나입니다.
+- 객체 키는 `security-scans/<저장소>/<도구>/<YYYY-MM-DD>/<github_run_id>.json` 입니다. `<저장소>` 는 `SERVICE-watch-nyang`, `OPS-watch-nyang`, `INFRA-watch-nyang` 중 하나입니다.
 - 저장소마다 역할 `maemusae-gha-scan-<저장소 이름 소문자>` 가 있고, 자기 `security-scans/<저장소>/*` 아래에만 `s3:PutObject` 할 수 있습니다. 다른 저장소의 결과를 덮어쓰거나 읽지 못합니다.
 - trust 는 그 저장소의 `main` 브랜치 push 와 `pull_request` 입니다. fork PR 은 OIDC 토큰을 받지 못하므로 같은 저장소 브랜치의 PR 만 올릴 수 있습니다. 쓰기 권한이 있는 사람이 PR 에서 자기 저장소 접두사 아래에 결과를 꾸며 올릴 수는 있습니다. 결과만 쓰고 지우지 못하므로 받아들입니다.
 - 객체는 90일 뒤 지웁니다(변수 `security_scan_retention_days`).

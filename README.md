@@ -1,6 +1,6 @@
-# INFRA-maemusae
+# INFRA-watch-nyang
 
-매무새 EKS 환경의 인프라와 배포 정의입니다. Argo CD는 이 레포의 `gitops/`만 바라봅니다. Terraform 구성은 인프라 리드가 정리한 EKS Terraform 자원 정리 문서를 기준으로 합니다.
+WatchNyang EKS 환경의 인프라와 배포 정의입니다. Argo CD는 이 레포의 `gitops/`만 바라봅니다. Terraform 구성은 인프라 리드가 정리한 EKS Terraform 자원 정리 문서를 기준으로 합니다.
 
 | 경로 | 내용 | 담당 |
 | --- | --- | --- |
@@ -14,7 +14,7 @@
 | `gitops/security/` | 보안 정책, kube-bench, NetworkPolicy (아직 없음) | security |
 | `iam/policies/` | Terraform 이 읽는 IAM 정책 문서 | security, infra |
 
-층마다 state 가 따로라서 `20-eks` 와 `30-platform` 만 매일 만들고 지웁니다. 두 층은 `terraform_remote_state` 로 `10-base` 를, `30-platform` 은 `20-eks` 도 읽습니다. 자원 정리 문서의 항목이 어느 파일에 있는지, 문서와 다른 점은 [docs/architecture.md](docs/architecture.md)에 있습니다. 레포 구조를 정한 배경은 [SPEC adr/0001](https://github.com/saebyeok-baesong/SPEC-maemusae/blob/main/adr/0001-repo-structure.md)을 보세요.
+층마다 state 가 따로라서 `20-eks` 와 `30-platform` 만 매일 만들고 지웁니다. 두 층은 `terraform_remote_state` 로 `10-base` 를, `30-platform` 은 `20-eks` 도 읽습니다. 자원 정리 문서의 항목이 어느 파일에 있는지, 문서와 다른 점은 [docs/architecture.md](docs/architecture.md)에 있습니다. 레포 구조를 정한 배경은 [SPEC adr/0001](https://github.com/saebyeok-baesong/SPEC-watch-nyang/blob/main/adr/0001-repo-structure.md)을 보세요.
 
 ## 처음 적용하기
 
@@ -68,7 +68,7 @@ Terraform 이 만들지 않는 GitHub 쪽 설정입니다. App 과 ruleset 은 �
 
 GitHub App 은 두 개로 나눕니다. 하나는 CI 가 이미지 태그 PR 을 여는 image-PR App, 다른 하나는 클러스터 안 approvals 봇이 롤백 PR 을 열고 merge 하는 롤백 App 입니다. Discord 승인이 PR 리뷰를 대신하므로 롤백 App 만 `main` ruleset 을 우회합니다. 사람 확인 없이 merge 할 수 있는 App 이라 범위를 최소로 묶습니다.
 
-- [ ] 롤백 App 설치 범위는 "Only select repositories" 로 `INFRA-maemusae` 하나만 고릅니다.
+- [ ] 롤백 App 설치 범위는 "Only select repositories" 로 `INFRA-watch-nyang` 하나만 고릅니다.
 - [ ] 롤백 App 권한은 Contents 읽기·쓰기, Pull requests 읽기·쓰기, Metadata 읽기만 줍니다. Workflows, Administration, Actions, Secrets 권한은 주지 않습니다. webhook 은 끕니다.
 - [ ] `main` ruleset 의 우회 목록에는 롤백 App 하나만 넣고, 대상 브랜치는 `main` 만입니다. 사람 계정이나 다른 App 은 넣지 않습니다. 우회 범위를 넓히려면 보안팀 리뷰를 거칩니다.
 - [ ] 롤백 App private key 는 Secrets Manager `maemusae/github-rollback-app` 에 넣습니다. External Secrets 는 이 값을 `incident` namespace 의 approvals 서비스 계정이 쓰는 Secret 으로만 만듭니다. External Secrets 역할은 `maemusae/*` 를 모두 읽을 수 있으므로, 어느 namespace 에 어떤 비밀을 줄지는 gitops 의 SecretStore, ExternalSecret 에서 제한합니다.
