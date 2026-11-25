@@ -1,0 +1,21 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": "${public_bucket_arn}"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": "${private_bucket_arn}",
+      "Condition": { "StringLike": { "s3:prefix": ["uploads/*"] } }
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+      "Resource": ["${public_bucket_arn}/*", "${private_bucket_arn}/uploads/*"]
+    }
+  ]
+}
