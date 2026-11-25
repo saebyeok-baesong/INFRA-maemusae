@@ -14,8 +14,8 @@ run "no_domain" {
   command = plan
 
   assert {
-    condition     = keys(module.rds) == ["incident", "security", "service"]
-    error_message = "security, incident, service DB 3개"
+    condition     = keys(module.rds) == ["ops", "service"]
+    error_message = "service 와 ops DB 2개. incident, security 는 ops 안의 DB 다"
   }
 
   assert {
@@ -39,7 +39,7 @@ run "no_domain" {
   }
 
   assert {
-    condition     = keys(module.pod_identity.identities) == ["api", "aws-load-balancer-controller", "ebs-csi", "external-secrets", "loki", "ops-security-ingest"]
+    condition     = keys(module.pod_identity.identities) == ["api", "aws-load-balancer-controller", "ebs-csi", "external-secrets", "loki", "ops", "ops-security-ingest"]
     error_message = "Route53 영역이 없으면 ExternalDNS 역할을 만들지 않는다"
   }
 
@@ -66,6 +66,11 @@ run "no_domain" {
   assert {
     condition     = module.pod_identity.identities["ops-security-ingest"].namespace == "incident" && module.pod_identity.identities["ops-security-ingest"].service_account == "ops-security-ingest"
     error_message = "스캔 수집기는 incident/ops-security-ingest"
+  }
+
+  assert {
+    condition     = module.pod_identity.identities["ops"].namespace == "incident" && module.pod_identity.identities["ops"].service_account == "ops"
+    error_message = "OPS 앱은 incident/ops"
   }
 
   assert {
@@ -124,15 +129,9 @@ run "rds_wiring" {
   }
 
   override_resource {
-    target          = module.rds["security"].aws_db_instance.this
+    target          = module.rds["ops"].aws_db_instance.this
     override_during = plan
-    values          = { arn = "arn:aws:rds:ap-northeast-2:123456789012:db:maemusae-security", master_user_secret = [{ secret_arn = "arn:aws:secretsmanager:ap-northeast-2:123456789012:secret:rds!maemusae-security" }] }
-  }
-
-  override_resource {
-    target          = module.rds["incident"].aws_db_instance.this
-    override_during = plan
-    values          = { arn = "arn:aws:rds:ap-northeast-2:123456789012:db:maemusae-incident", master_user_secret = [{ secret_arn = "arn:aws:secretsmanager:ap-northeast-2:123456789012:secret:rds!maemusae-incident" }] }
+    values          = { arn = "arn:aws:rds:ap-northeast-2:123456789012:db:maemusae-ops", resource_id = "db-OPS", master_user_secret = [{ secret_arn = "arn:aws:secretsmanager:ap-northeast-2:123456789012:secret:rds!maemusae-ops" }] }
   }
 
   override_resource {
@@ -148,17 +147,22 @@ run "rds_wiring" {
 
   assert {
     condition     = alltrue([for db in module.rds : db.availability_zone == "ap-northeast-2a"])
-    error_message = "RDS 3개 모두 2a 에 둔다"
+    error_message = "RDS 2개 모두 2a 에 둔다"
   }
 
   assert {
-    condition     = aws_db_event_subscription.rds.source_type == "db-instance" && aws_db_event_subscription.rds.source_ids == toset(["maemusae-incident", "maemusae-security", "maemusae-service"])
-    error_message = "RDS 이벤트 구독은 DB 3개를 모두 받는다"
+    condition     = aws_db_event_subscription.rds.source_type == "db-instance" && aws_db_event_subscription.rds.source_ids == toset(["maemusae-ops", "maemusae-service"])
+    error_message = "RDS 이벤트 구독은 DB 2개를 모두 받는다"
   }
 
   assert {
     condition     = aws_db_event_subscription.rds.sns_topic == "arn:aws:sns:ap-northeast-2:123456789012:maemusae-alerts"
     error_message = "RDS 이벤트는 CloudWatch 경보와 같은 alerts 주제로 간다"
+  }
+
+  assert {
+    condition     = local.policy_vars.ops_dbuser_arn == "arn:aws:rds-db:ap-northeast-2:123456789012:dbuser:db-OPS"
+    error_message = "rds-db:connect 는 ops 인스턴스의 리소스 ID 로 dbuser 를 가리킨다"
   }
 }
 
@@ -235,11 +239,21 @@ run "trim_lists" {
 
   variables {
     ecr_repositories = { web = "saebyeok-baesong/SERVICE-maemusae", ops = "saebyeok-baesong/OPS-maemusae" }
-    databases        = { service = {} }
+    databases        = { ops = {} }
   }
 
   assert {
-    condition     = keys(aws_ecr_repository.this) == ["ops", "web"] && keys(module.rds) == ["service"]
+    condition     = keys(aws_ecr_repository.this) == ["ops", "web"] && keys(module.rds) == ["ops"]
     error_message = "변수 목록에서 줄을 지우면 저장소와 DB 가 빠진다"
   }
+}
+
+run "ops_db_required" {
+  command = plan
+
+  variables {
+    databases = { service = {} }
+  }
+
+  expect_failures = [var.databases]
 }

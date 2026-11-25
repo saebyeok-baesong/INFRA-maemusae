@@ -54,7 +54,7 @@ variable "db_subnets" {
 }
 
 variable "rds_availability_zone" {
-  description = "RDS 3개를 둘 AZ. app 노드와 같은 AZ 에 둬 AZ 간 전송 요금을 없앤다"
+  description = "RDS 를 둘 AZ. app 노드와 같은 AZ 에 둬 AZ 간 전송 요금을 없앤다"
   type        = string
   default     = "ap-northeast-2a"
 
@@ -65,16 +65,20 @@ variable "rds_availability_zone" {
 }
 
 variable "databases" {
-  description = "RDS PostgreSQL 인스턴스. 키가 식별자 접미사와 DB 이름이 된다"
+  description = "RDS PostgreSQL 인스턴스. 키가 식별자 접미사와 DB 이름이 된다. ops 안의 incident, security DB 는 terraform/sql/ops-db-roles.sql 이 만든다"
   type = map(object({
     instance_class    = optional(string, "db.t4g.micro")
     allocated_storage = optional(number, 20)
     engine_version    = optional(string, "17")
   }))
   default = {
-    security = {}
-    incident = {}
-    service  = {}
+    service = {}
+    ops     = {}
+  }
+
+  validation {
+    condition     = contains(keys(var.databases), "ops")
+    error_message = "ops 는 빼지 않는다. OPS Pod Identity 의 rds-db:connect 정책이 ops 인스턴스를 가리킨다."
   }
 }
 

@@ -12,6 +12,8 @@ resource "aws_db_instance" "this" {
   username = "maemusae"
   # RDS 가 비밀번호를 Secrets Manager 에 만들고 회전한다. Terraform state 에 비밀번호가 남지 않는다
   manage_master_user_password = true
+  # 앱 사용자는 비밀번호 없이 Pod Identity 의 rds-db:connect 로 토큰을 받아 접속한다
+  iam_database_authentication_enabled = true
 
   availability_zone      = var.availability_zone
   db_subnet_group_name   = var.subnet_group_name

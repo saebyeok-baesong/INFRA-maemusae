@@ -6,6 +6,11 @@ output "arn" {
   value = aws_db_instance.this.arn
 }
 
+output "resource_id" {
+  description = "rds-db:connect 정책의 dbuser ARN 에 들어가는 ID"
+  value       = aws_db_instance.this.resource_id
+}
+
 output "availability_zone" {
   value = aws_db_instance.this.availability_zone
 }

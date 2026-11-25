@@ -7,7 +7,7 @@ terraform/
 ├── bootstrap/            state 버킷, GitHub OIDC 공급자, plan/apply 역할
 ├── modules/
 │   ├── network/          VPC, 퍼블릭/노드/DB 서브넷, IGW, 라우팅 테이블, S3 endpoint, NAT 용 EIP, 노드/RDS 보안 그룹
-│   ├── rds/              RDS 1대와 그 경보 (10-base 가 for_each 로 3번 부른다, AZ 는 변수)
+│   ├── rds/              RDS 1대와 그 경보, IAM DB 인증 (10-base 가 for_each 로 2번 부른다, AZ 는 변수)
 │   ├── eks/              클러스터, 노드그룹, 애드온, Access Entry
 │   ├── pod-identity/     컴포넌트별 IAM 역할
 │   └── platform/         Helm 릴리스 (LB Controller, External Secrets, ExternalDNS, Argo CD)
@@ -45,12 +45,12 @@ terraform/
 | §4.1 LB Controller, External Secrets, ExternalDNS, Argo CD | 30-platform | `modules/platform/main.tf` `helm_release.*` |
 | §4.1 나머지 (kube-bench, Alloy, Loki, Grafana, Prometheus, Alertmanager, kube-state-metrics, metrics-server, node-exporter) | gitops 예정 | Argo CD 가 설치한다. Loki 의 IAM 역할만 10-base |
 | §4.2, §4.3 앱과 incident 네임스페이스 | gitops 예정 | |
-| §5.1 RDS x3, db.t4g.micro, 서브넷 그룹 하나, `manage_master_user_password` | 10-base | `envs/dev/10-base/data.tf` `module.rds` (변수 `databases`, `rds_availability_zone`), `aws_db_subnet_group.this` (DB 서브넷만) |
+| §5.1 RDS x3, db.t4g.micro, 서브넷 그룹 하나, `manage_master_user_password` | 10-base | `envs/dev/10-base/data.tf` `module.rds` 2개 service, ops (변수 `databases`, `rds_availability_zone`), `aws_db_subnet_group.this` (DB 서브넷만). ops 안의 incident, security DB 와 역할은 `terraform/sql/ops-db-roles.sql` |
 | 문서에 없음. RDS 이벤트 알림 | 10-base | `aws_db_event_subscription.rds` → `aws_sns_topic.alerts` |
 | 문서에 없음. Prometheus 데이터 볼륨 | 10-base | `aws_ebs_volume.prometheus` (변수 `prometheus_volume`). 붙이는 PV 는 gitops 예정 |
 | §5.2 S3 uploads, loki 와 문서에 없는 security-scans (퍼블릭 차단, SSE, 수명 주기) | 10-base | `aws_s3_bucket.this`, `..._public_access_block`, `..._server_side_encryption_configuration`, `..._lifecycle_configuration` |
 | §6 ECR 4개(web, api, migrate, ops) + 수명 주기 | 10-base | `envs/dev/10-base/services.tf` `aws_ecr_repository.this`, `aws_ecr_lifecycle_policy.this` (변수 `ecr_repositories`) |
-| §6 Secrets Manager | 10-base | `aws_secretsmanager_secret.app` (`maemusae/openai`, `maemusae/discord`). DB 접속 정보는 RDS 가 만드는 마스터 비밀 3개 |
+| §6 Secrets Manager | 10-base | `aws_secretsmanager_secret.app` (`maemusae/openai`, `maemusae/discord`). DB 접속 정보는 RDS 가 만드는 마스터 비밀 2개 |
 | §6 SES + DKIM 레코드 | 10-base | `aws_sesv2_email_identity.report`, `aws_route53_record.ses_dkim`. 도메인이 있을 때만 |
 | §6 CloudWatch 경보 | 10-base | `modules/rds/main.tf` `aws_cloudwatch_metric_alarm.this` (DB 마다 CPU, 남은 저장 공간, 연결 수), `aws_sns_topic.alerts` |
 | §6 CloudTrail + S3 | 10-base | `aws_cloudtrail.this`, `aws_s3_bucket.this["cloudtrail"]` |
@@ -89,7 +89,8 @@ terraform/
 | `api` | `maemusae/api` | uploads 버킷 읽기, 쓰기, 삭제 |
 | `ebs-csi` | `kube-system/ebs-csi-controller-sa` | `AmazonEBSCSIDriverPolicy` |
 | `external-dns` | `external-dns/external-dns` | `route53_zone_id` 영역의 레코드 변경. 영역 ID 가 있을 때만 만든다 |
-| `ops-security-ingest` | `incident/ops-security-ingest` | security-scans 버킷 목록과 객체 읽기 |
+| `ops-security-ingest` | `incident/ops-security-ingest` | security-scans 버킷 목록과 객체 읽기, ops DB 에 `security_app` 으로 IAM 접속 |
+| `ops` | `incident/ops` | ops DB 에 `incident_app` 으로 IAM 접속 |
 
 ## 보안 스캔 업로드
 
@@ -174,6 +175,30 @@ prometheus:
 
 삭제 주의. EBS 볼륨에는 RDS 의 삭제 방지 같은 설정이 없습니다. `prometheus_volume.az` 를 바꾸면 볼륨을 새로 만들고, 10-base 를 destroy 하면 볼륨이 지워집니다. 둘 다 plan 에서 `aws_ebs_volume.prometheus` 가 destroy 나 replace 로 보이니 apply 전에 확인합니다. RDS 처럼 지울 때 마지막 스냅샷을 남깁니다(`final_snapshot = true`). 크기를 늘리는 것은 볼륨을 다시 만들지 않습니다.
 
+## ops DB 역할 만들기
+
+RDS 는 service, ops 두 대입니다. OPS 의 incident, security 는 ops 인스턴스 안의 DB 두 개이고, 소유자는 로그인 역할 `incident_app`, `security_app` 입니다. 두 역할은 비밀번호가 없고 IAM DB 인증으로만 접속합니다. `incident/ops` 는 `incident_app`, `incident/ops-security-ingest` 는 `security_app` 에만 `rds-db:connect` 가 있습니다. 서로의 DB 에는 CONNECT 권한도 없습니다.
+
+DB 와 역할은 Terraform 이 아니라 `terraform/sql/ops-db-roles.sql` 이 만듭니다. ops 를 처음 만든 뒤 마스터 사용자로 한 번 실행합니다. 다시 실행해도 같은 상태가 됩니다. DB 서브넷은 밖으로 나가는 경로가 없어서 클러스터가 떠 있는 코어타임에 platform 노드의 일회용 psql Pod 로 실행합니다. 마스터 비밀번호는 RDS 가 관리하는 비밀에서 읽어 stdin 으로 넘겨 Pod 스펙에 남기지 않습니다.
+
+```sh
+dbs="$(terraform -chdir=terraform/envs/dev/10-base output -json databases)"
+{
+  aws secretsmanager get-secret-value --secret-id "$(jq -r .ops.master_secret_arn <<<"$dbs")" --query SecretString --output text | jq -r .password
+  cat terraform/sql/ops-db-roles.sql
+} | kubectl run ops-db-roles --rm -i --restart=Never --image=postgres:17 \
+  --overrides='{"apiVersion":"v1","spec":{"nodeSelector":{"role":"platform"},"tolerations":[{"key":"role","operator":"Equal","value":"platform","effect":"NoSchedule"}]}}' \
+  --env PGHOST="$(jq -r .ops.address <<<"$dbs")" --env PGUSER=maemusae --env PGDATABASE=ops --env PGSSLMODE=require \
+  -- sh -c 'read -r PGPASSWORD && export PGPASSWORD && exec psql'
+```
+
+OPS 앱은 접속할 때마다 IAM 인증 토큰을 새로 만들어 비밀번호 자리에 넣습니다. 토큰은 15분만 유효해서 커넥션 풀의 새 연결마다 만듭니다. 연결은 `sslmode=require` 여야 합니다.
+
+```python
+token = boto3.client("rds").generate_db_auth_token(DBHostname=host, Port=5432, DBUsername="incident_app")
+psycopg.connect(host=host, dbname="incident", user="incident_app", password=token, sslmode="require")
+```
+
 ## 자원 정리 문서와 다른 점
 
 | 문서 | 이 레포 | 이유 |
@@ -191,7 +216,7 @@ prometheus:
 | 문서에 없음 | RDS 이벤트 구독 | 운영 결정 표 참고 |
 | 문서에 없음 | Prometheus 데이터용 상시 EBS 볼륨 | 위 "Prometheus 데이터 볼륨" |
 | §8 `pod-identity` 모듈이 역할과 연결을 함께 만든다 | 모듈은 역할만, 연결은 20-eks root | 위 "Pod Identity 역할은 10-base 에" |
-| §8 `rds` 모듈을 3번 호출 | `module "rds"` 하나를 `for_each = var.databases` 로 3번 | DB 를 더하고 빼는 일이 변수 한 줄이다 |
+| §8 `rds` 모듈을 3번 호출 | `module "rds"` 하나를 `for_each = var.databases` 로 2번 | DB 를 더하고 빼는 일이 변수 한 줄이다 |
 | §8 10-base 에 network 모듈 | network 모듈이 노드 보안 그룹과 RDS 보안 그룹도 만든다 | §2.3 이 네트워크 절에 있고, 두 그룹 모두 상시여야 한다 |
 
 ## Argo CD 와 애드온 설치
@@ -214,7 +239,7 @@ prometheus:
 | 보안 스캔 결과 | S3 `maemusae-security-scans-<계정 ID>` 에 올리고 90일 보관한다. 키 형식과 역할은 위 "보안 스캔 업로드" | 보관 기간이나 올리는 저장소가 바뀔 때 |
 | Redis | ElastiCache 가 아니라 클러스터 안 StatefulSet. Terraform 에 없다. 클러스터를 매일 지우므로 장애 큐 데이터가 그때 사라지는 것을 받아들인다 | 큐 데이터를 하루 넘게 보존해야 할 때 ElastiCache 나 10-base 의 영속 저장소를 검토한다 |
 | DB 서브넷 | RDS 는 DB 전용 서브넷 2a, 2c 에 둔다. 라우팅 테이블에 기본 경로가 없어 NAT 나 IGW 로 나갈 수 없다. 노드 서브넷과 RDS 보안 그룹(노드에서 오는 5432)은 그대로다 | RDS 가 외부(예: S3 내보내기)에 닿아야 할 때 VPC endpoint 를 DB 라우팅 테이블에 더한다 |
-| RDS AZ | RDS 3개를 2a 에 둔다(`rds_availability_zone`). app 노드와 같은 AZ 라 AZ 간 지연과 전송 요금이 없다. 서브넷 그룹은 2a, 2c 를 유지하고 Multi-AZ 는 끈다 | 운영 트래픽을 받거나 2a 장애를 견뎌야 할 때 service DB 부터 Multi-AZ 를 켠다 |
-| RDS 이벤트 | DB 3개의 availability, failover, failure, low storage, maintenance, notification, recovery 이벤트를 CloudWatch 경보와 같은 alerts 주제로 보낸다. 같은 계정 RDS 는 주제 기본 정책으로 게시할 수 있어 주제 정책을 두지 않는다 | 주제를 암호화하거나 다른 계정 RDS 를 받을 때 주제 정책을 더한다 |
+| RDS AZ | RDS 2개를 2a 에 둔다(`rds_availability_zone`). app 노드와 같은 AZ 라 AZ 간 지연과 전송 요금이 없다. 서브넷 그룹은 2a, 2c 를 유지하고 Multi-AZ 는 끈다 | 운영 트래픽을 받거나 2a 장애를 견뎌야 할 때 service DB 부터 Multi-AZ 를 켠다 |
+| RDS 이벤트 | DB 2개의 availability, failover, failure, low storage, maintenance, notification, recovery 이벤트를 CloudWatch 경보와 같은 alerts 주제로 보낸다. 같은 계정 RDS 는 주제 기본 정책으로 게시할 수 있어 주제 정책을 두지 않는다 | 주제를 암호화하거나 다른 계정 RDS 를 받을 때 주제 정책을 더한다 |
 | Prometheus 데이터 | 10-base 의 상시 EBS(2c, 20GiB)에 남겨 날짜를 넘어 지표를 비교한다. Alertmanager silence 와 Grafana 에서 손으로 고친 내용은 여전히 매일 사라진다. 대시보드는 gitops 코드로 관리한다 | 보존 기간이 늘어 20GiB 가 모자라면 `prometheus_volume.size_gib` 를 늘린다 |
 | incident 배치 (보류) | 첫 클러스터를 올린 뒤 platform 노드의 메모리 여유를 잰다. 여유가 있으면 `incident` namespace 를 platform 노드(2c)로 옮겨 app 노드가 죽어도 장애 대응 봇이 살아 있게 한다. NAT 가 2a 에 있어 2a 전체 장애에는 도움이 되지 않는다. Terraform 변경은 없다 | 첫 클러스터 기동 뒤 측정값으로 정한다 |

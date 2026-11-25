@@ -10,6 +10,11 @@
       "Effect": "Allow",
       "Action": ["s3:GetObject"],
       "Resource": "${scans_bucket_arn}/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["rds-db:connect"],
+      "Resource": "${ops_dbuser_arn}/security_app"
     }
   ]
 }

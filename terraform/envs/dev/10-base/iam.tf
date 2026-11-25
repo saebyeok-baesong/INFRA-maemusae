@@ -9,6 +9,7 @@ locals {
     uploads_bucket_arn = aws_s3_bucket.this["uploads"].arn
     scans_bucket_arn   = aws_s3_bucket.this["security-scans"].arn
     hosted_zone_arn    = "arn:aws:route53:::hostedzone/${var.route53_zone_id}"
+    ops_dbuser_arn     = "arn:aws:rds-db:${var.region}:${var.aws_account_id}:dbuser:${module.rds["ops"].resource_id}"
     secret_arns = concat(
       ["arn:aws:secretsmanager:${var.region}:${var.aws_account_id}:secret:${var.name}/*"],
       [for db in module.rds : db.master_secret_arn],
@@ -28,6 +29,7 @@ module "pod_identity" {
       api                          = { namespace = "maemusae", service_account = "api", policy_json = templatefile("${local.policy_dir}/api.json.tftpl", local.policy_vars) }
       ebs-csi                      = { namespace = "kube-system", service_account = "ebs-csi-controller-sa", managed_policy_arns = ["arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"] }
       ops-security-ingest          = { namespace = "incident", service_account = "ops-security-ingest", policy_json = templatefile("${local.policy_dir}/ops-security-ingest.json.tftpl", local.policy_vars) }
+      ops                          = { namespace = "incident", service_account = "ops", policy_json = templatefile("${local.policy_dir}/ops.json.tftpl", local.policy_vars) }
     },
     var.route53_zone_id == "" ? {} : {
       external-dns = { namespace = "external-dns", service_account = "external-dns", policy_json = templatefile("${local.policy_dir}/external-dns.json.tftpl", local.policy_vars) }
