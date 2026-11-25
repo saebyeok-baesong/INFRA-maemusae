@@ -126,10 +126,10 @@ variable "ecr_repositories" {
   description = "ECR 저장소 이름 => 그 저장소에 push 할 GitHub 저장소 (owner/repo). 줄을 지우면 저장소와 push 권한이 같이 빠진다"
   type        = map(string)
   default = {
-    web     = "saebyeok-baesong/SERVICE-maemusae"
-    api     = "saebyeok-baesong/SERVICE-maemusae"
-    migrate = "saebyeok-baesong/SERVICE-maemusae"
-    ops     = "saebyeok-baesong/OPS-maemusae"
+    web     = "saebyeok-baesong/SERVICE-watch-nyang"
+    api     = "saebyeok-baesong/SERVICE-watch-nyang"
+    migrate = "saebyeok-baesong/SERVICE-watch-nyang"
+    ops     = "saebyeok-baesong/OPS-watch-nyang"
   }
 }
 
@@ -155,9 +155,9 @@ variable "security_scan_repositories" {
   description = "보안 스캔 결과를 private 버킷의 security-scans/<저장소 이름>/ 아래에 올릴 GitHub 저장소 (owner/repo)"
   type        = list(string)
   default = [
-    "saebyeok-baesong/SERVICE-maemusae",
-    "saebyeok-baesong/OPS-maemusae",
-    "saebyeok-baesong/INFRA-maemusae",
+    "saebyeok-baesong/SERVICE-watch-nyang",
+    "saebyeok-baesong/OPS-watch-nyang",
+    "saebyeok-baesong/INFRA-watch-nyang",
   ]
 }
 

@@ -23,7 +23,7 @@ variable "region" {
 variable "github_repository" {
   description = "plan/apply 역할을 믿을 저장소 (owner/repo)"
   type        = string
-  default     = "saebyeok-baesong/INFRA-maemusae"
+  default     = "saebyeok-baesong/INFRA-watch-nyang"
 }
 
 variable "github_environments" {
