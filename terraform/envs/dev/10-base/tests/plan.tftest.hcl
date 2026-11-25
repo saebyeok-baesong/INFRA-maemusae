@@ -24,8 +24,8 @@ run "no_domain" {
   }
 
   assert {
-    condition     = keys(aws_ecr_repository.this) == ["api", "migrate", "ops", "web"]
-    error_message = "ECR 저장소는 SERVICE 의 web, api, migrate 와 OPS 이미지 하나(ops)"
+    condition     = keys(aws_ecr_repository.this) == ["api", "ops", "web"]
+    error_message = "ECR 저장소는 SERVICE 의 web, api 와 OPS 이미지 하나(ops)"
   }
 
   assert {

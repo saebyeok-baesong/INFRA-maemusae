@@ -1,0 +1,25 @@
+# 매무새 앱(SERVICE). 30-platform 의 root 앱이 gitops/apps 를 읽어 이 Application 을 만든다
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: maemusae
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/saebyeok-baesong/INFRA-watch-nyang.git
+    targetRevision: main
+    path: gitops/maemusae
+    helm:
+      # 이미지 정의 파일. 키 web, api 가 그대로 .Values.web, .Values.api 가 된다
+      valueFiles:
+        - ../apps/images.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: maemusae
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

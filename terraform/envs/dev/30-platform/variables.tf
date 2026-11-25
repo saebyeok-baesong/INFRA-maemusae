@@ -27,6 +27,13 @@ variable "chart_versions" {
     external_secrets             = optional(string, "2.15.0")
     external_dns                 = optional(string, "1.23.0")
     argocd                       = optional(string, "10.17.2")
+    argocd_apps                  = optional(string, "2.0.2")
   })
   default = {}
+}
+
+variable "gitops_repo_url" {
+  description = "Argo CD root 앱이 gitops/apps/ 를 읽을 저장소 (public)"
+  type        = string
+  default     = "https://github.com/saebyeok-baesong/INFRA-watch-nyang.git"
 }

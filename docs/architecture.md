@@ -10,7 +10,7 @@ terraform/
 │   ├── rds/              RDS 1대와 그 경보, IAM DB 인증 (10-base 가 for_each 로 2번 부른다, AZ 는 변수)
 │   ├── eks/              클러스터, 노드그룹, 애드온, Access Entry
 │   ├── pod-identity/     컴포넌트별 IAM 역할
-│   └── platform/         Helm 릴리스 (LB Controller, External Secrets, ExternalDNS, Argo CD)
+│   └── platform/         Helm 릴리스 (LB Controller, External Secrets, ExternalDNS, Argo CD, root 앱)
 ├── envs/dev/
 │   ├── 10-base/          상시
 │   ├── 20-eks/           코어타임: NAT Gateway, eks 모듈, Pod Identity 연결
@@ -46,14 +46,15 @@ terraform/
 | §3.3 코어타임 생성, 삭제 순서 | - | `terraform/eks.sh`, `.github/workflows/eks.yml` |
 | §4.1 LB Controller, External Secrets, ExternalDNS, Argo CD | 30-platform | `modules/platform/main.tf` `helm_release.*` |
 | §4.1 나머지 (kube-bench, Alloy, Loki, Grafana, Prometheus, Alertmanager, kube-state-metrics, metrics-server, node-exporter) | gitops 예정 | Argo CD 가 설치한다. Loki 의 IAM 역할만 10-base |
-| §4.2, §4.3 앱과 incident 네임스페이스 | gitops 예정 | |
+| §4.2 앱 네임스페이스 | gitops | `gitops/maemusae/`. 아래 "gitops 매무새 앱" |
+| §4.3 incident 네임스페이스 | gitops 예정 | |
 | §5.1 RDS x3, db.t4g.micro, 서브넷 그룹 하나, `manage_master_user_password` | 10-base | `envs/dev/10-base/data.tf` `module.rds` 2개 service, ops (변수 `databases`, `rds_availability_zone`), `aws_db_subnet_group.this` (DB 서브넷만). ops 안의 incident, security DB 와 역할은 `terraform/sql/ops-db-roles.sql` |
 | 문서에 없음. RDS 이벤트 알림 | 10-base | `aws_db_event_subscription.rds` → `aws_sns_topic.alerts` |
 | 문서에 없음. 경보 Discord 전달 | 10-base | `aws_lambda_function.discord_alerts` (코드 `terraform/lambda/discord-alerts/main.py`), `aws_sns_topic_subscription.alerts_discord`, `aws_cloudwatch_log_group.discord_alerts`. 정책은 `iam/policies/discord-alerts.json.tftpl` |
 | 문서에 없음. Prometheus 데이터 볼륨 | 10-base | `aws_ebs_volume.prometheus` (변수 `prometheus_volume`). 붙이는 PV 는 gitops 예정 |
 | §5.2 S3 uploads, loki 와 문서에 없는 security-scans (퍼블릭 차단, SSE, 수명 주기) | 10-base | `aws_s3_bucket.this` public, private 2개, `..._public_access_block`, `..._server_side_encryption_configuration`, `aws_s3_bucket_policy.public`, `aws_s3_bucket_lifecycle_configuration.private` (접두사표 `local.private_prefixes`). 아래 "S3 버킷" |
-| §6 ECR 4개(web, api, migrate, ops) + 수명 주기 | 10-base | `envs/dev/10-base/services.tf` `aws_ecr_repository.this`, `aws_ecr_lifecycle_policy.this` (변수 `ecr_repositories`) |
-| §6 Secrets Manager | 10-base | `aws_secretsmanager_secret.app` (`maemusae/openai`, `maemusae/discord`, `maemusae/github-rollback-app`, `maemusae/discord-alerts-webhook`). DB 접속 정보는 RDS 가 만드는 마스터 비밀 2개 |
+| §6 ECR 3개(web, api, ops) + 수명 주기 | 10-base | `envs/dev/10-base/services.tf` `aws_ecr_repository.this`, `aws_ecr_lifecycle_policy.this` (변수 `ecr_repositories`) |
+| §6 Secrets Manager | 10-base | `aws_secretsmanager_secret.app` (`maemusae/api`, `maemusae/openai`, `maemusae/discord`, `maemusae/github-rollback-app`, `maemusae/discord-alerts-webhook`). DB 접속 정보는 RDS 가 만드는 마스터 비밀 2개 |
 | §6 SES + DKIM 레코드 | 10-base | `aws_sesv2_email_identity.report`, `aws_route53_record.ses_dkim`. 도메인이 있을 때만 |
 | §6 CloudWatch 경보 | 10-base | `modules/rds/main.tf` `aws_cloudwatch_metric_alarm.this` (DB 마다 CPU, 남은 저장 공간, 연결 수), `aws_sns_topic.alerts` |
 | §6 CloudTrail + S3 | 10-base | `aws_cloudtrail.this` (`s3_key_prefix = "cloudtrail"`), `aws_s3_bucket_policy.private` |
@@ -233,7 +234,7 @@ psycopg.connect(host=host, dbname="incident", user="incident_app", password=toke
 | §2.1 private 라우팅 테이블에 `0.0.0.0/0 → NAT` | 10-base 의 테이블에는 기본 경로가 없고 20-eks 가 `aws_route` 로 더하고 지운다 | NAT 와 수명을 맞춘다 |
 | §3.3 코어타임 09:30-18:00 | 평일 13:40-17:30 KST | 운영 결정 표 참고 |
 | §4.3 approvals 에 Argo CD 롤백 권한 필요 | Argo CD 권한을 주지 않는다. approvals 는 INFRA 레포에 revert PR 을 열고 merge 해서 되돌린다 | Git 이 배포 기록의 원본으로 남는다. IAM 이나 Argo CD RBAC 설정이 필요 없다 |
-| §6 ECR 이미지 FE, BE, webhook, worker, approvals, migrate | `web`, `api`, `migrate`(SERVICE 가 push), `ops`(OPS 가 push) 4개 | OPS 는 이미지 하나에 진입점 api, worker, approvals 를 둔다. 운영 결정 표 참고 |
+| §6 ECR 이미지 FE, BE, webhook, worker, approvals, migrate | `web`, `api`(SERVICE 가 push), `ops`(OPS 가 push) 3개 | migrate 는 api 이미지로 `alembic upgrade head` 를 돌려 따로 두지 않는다. OPS 는 이미지 하나에 진입점 api, worker, approvals 를 둔다. 운영 결정 표 참고 |
 | §6 Secrets Manager 에 OpenAI 키, Discord 웹훅, DB 접속 정보 | `maemusae/openai`, `maemusae/discord`(봇 토큰), `maemusae/github-rollback-app`(롤백 App private key)와 RDS 마스터 비밀 | 승인 봇에는 웹훅 대신 봇 토큰을 둔다. 웹훅은 경보 채널용 `maemusae/discord-alerts-webhook` 하나만 둔다. 롤백 App 은 approvals 가 INFRA 에 PR 을 열고 merge 할 때 쓴다 |
 | 문서에 없음 | private 버킷의 `security-scans/`, 저장소별 스캔 업로드 역할, `ops-security-ingest` Pod Identity | 위 "보안 스캔 업로드" |
 | §6 CloudWatch NLB 지표 | RDS 경보만 만든다 | 위 "NLB 경보는 미리 만들 수 없습니다" |
@@ -249,7 +250,40 @@ psycopg.connect(host=host, dbname="incident", user="incident_app", password=toke
 
 ## Argo CD 와 애드온 설치
 
-30-platform 은 LB Controller, External Secrets, Argo CD 를, 영역 ID 가 있으면 ExternalDNS 도 Helm 으로 설치합니다. LB Controller 웹훅이 Service 생성을 가로채서, 나머지 차트는 LB Controller 가 뜬 뒤 설치합니다. 루트 앱은 `gitops/` 가 생긴 뒤에 더합니다. kube-prometheus-stack, Loki, Alloy, Traefik, kube-bench, 앱은 Argo CD 가 `gitops/` 에서 설치합니다.
+30-platform 은 LB Controller, External Secrets, Argo CD 를, 영역 ID 가 있으면 ExternalDNS 도 Helm 으로 설치합니다. LB Controller 웹훅이 Service 생성을 가로채서, 나머지 차트는 LB Controller 가 뜬 뒤 설치합니다. Argo CD 다음에 `argocd-apps` 차트로 root 앱을 만들고, root 앱이 `gitops/apps/` 의 Application 을 읽습니다 (저장소는 변수 `gitops_repo_url`, `main` 브랜치). kube-prometheus-stack, Loki, Alloy, Traefik, kube-bench, 앱은 Argo CD 가 `gitops/` 에서 설치합니다.
+
+## gitops 매무새 앱
+
+`gitops/apps/maemusae.yaml` 이 `gitops/maemusae/`(Helm 차트)를 namespace `maemusae` 에 배포합니다. 이미지는 차트 values 대신 `gitops/apps/images.yaml`([SPEC contracts/images-yaml.md](https://github.com/saebyeok-baesong/SPEC-watch-nyang/blob/main/contracts/images-yaml.md))을 valueFiles 로 읽어서, CI 의 이미지 PR 과 OPS 롤백 PR 은 그 파일 한 줄만 바꿉니다. root 앱은 `images.yaml` 을 매니페스트로 적용하지 않게 뺍니다. sync wave 순서는 설정과 비밀(-1), migrate Job(0), api 와 web(1) 입니다. migrate 가 실패하면 api, web 은 바뀌지 않습니다.
+
+| 자원 | 내용 |
+| --- | --- |
+| `api` Deployment, Service, ServiceAccount | 8000. 서비스 계정 `api` 에 Pod Identity(`pod_identities.api`)가 붙어 S3 를 키 없이 쓴다 |
+| `web` Deployment, Service | 3000. `/api` 프록시 주소는 이미지 빌드 때 `http://api.maemusae.svc:8000` 으로 고정된다 |
+| `migrate` Job | api 이미지로 `alembic upgrade head` 만. 관리자 시드는 SERVICE `seed-admin` 이 따로 한다 |
+| Ingress (traefik) | `/api` → api, `/` → web. `/metrics`, `/health`, `/docs` 는 밖에 열지 않는다 |
+| SecretStore, ExternalSecret 2개 | `maemusae/api`(JSON), `maemusae/openai`(문자열), service RDS 마스터 비밀 → `DATABASE_URL` |
+
+앱 Pod 는 모두 `role=app` 노드에 뜹니다(nodeSelector, toleration). 도메인과 SES 가 없어 `APP_ENV=dev` 로 띄웁니다. production 은 https 쿠키, 운영 도메인, SMTP 가 없으면 시작하지 않습니다.
+
+10-base apply 뒤 채울 값:
+
+| 자리 | 파일 | 값 |
+| --- | --- | --- |
+| `<ACCOUNT_ID>` | `templates/config.yaml` | 계정 ID |
+| `<service RDS 주소>` | `templates/secrets.yaml` | `terraform output -json databases` 의 `service.address` |
+| `<service RDS 마스터 비밀 ARN>` | `templates/secrets.yaml` | 같은 output 의 `service.master_secret_arn` |
+| `000000000000...@sha256:000...` 자리표시 | `gitops/apps/images.yaml` | SERVICE 이미지 CI 의 첫 PR 이 실제 이미지 주소로 바꾼다 |
+
+비밀 값은 사람이 한 번 넣습니다.
+
+```bash
+aws secretsmanager put-secret-value --secret-id maemusae/api --secret-string \
+  '{"JWT_SECRET_KEY":"<openssl rand -hex 32>","PII_ENCRYPTION_KEYS":"1:<키>","PII_HMAC_KEY":"<키>"}'
+aws secretsmanager put-secret-value --secret-id maemusae/openai --secret-string '<OpenAI 키>'
+```
+
+PII 키는 SERVICE `backend` 에서 `uv run python -m app.crypto.keygen` 으로 만듭니다. 잃으면 암호화한 개인정보를 되살릴 수 없으니 Secrets Manager 밖에도 따로 보관합니다.
 
 ## 운영 결정 (2026-11-25)
 
@@ -263,7 +297,7 @@ psycopg.connect(host=host, dbname="incident", user="incident_app", password=toke
 | apply 역할 권한 | PowerUser 와 IAMFull 을 유지한다 | INFRA issue #2 에서 보안팀과 합의해 줄인다 |
 | approvals 롤백 | Argo CD 롤백이 아니라 INFRA PR merge 로 되돌린다. GitHub App 을 둘로 나눈다. image-PR App 은 CI 가 이미지 태그 PR 을 열 때, 롤백 App 은 클러스터 안 approvals 봇이 쓴다. Discord 승인이 PR 리뷰를 대신하므로 롤백 App 만 `main` ruleset 우회 목록에 넣는다. 설치 범위, 권한, 키 보관은 README 의 GitHub 설정 체크리스트대로 한다. App 과 ruleset 은 아직 만들지 않았다 | 우회 범위를 넓히거나 다른 주체를 우회 목록에 넣을 때. 보안팀 리뷰를 거친다 |
 | 승인 역할 | Discord 승인자는 처음에 풀스택, 인프라, 보안팀 역할이다. 역할 ID 는 비밀이 아니라 OPS 설정이고, `maemusae/discord` 에는 봇 토큰만 둔다 | 승인자를 좁힐 때 OPS 설정만 바꾼다 |
-| ECR 저장소 | `web`, `api`, `migrate` 는 SERVICE, `ops` 는 OPS 가 push 한다. OPS 는 이미지 하나에 진입점 api, worker, approvals 를 둔다 | OPS 가 이미지를 나누면 `ecr_repositories` 에 줄을 더한다 |
+| ECR 저장소 | `web`, `api` 는 SERVICE, `ops` 는 OPS 가 push 한다. migrate Job 은 api 이미지를 쓴다. OPS 는 이미지 하나에 진입점 api, worker, approvals 를 둔다 | OPS 가 이미지를 나누면 `ecr_repositories` 에 줄을 더한다 |
 | 보안 스캔 결과 | S3 `maemusae-private-<계정 ID>` 의 `security-scans/` 에 올리고 90일 보관한다. 키 형식과 역할은 위 "보안 스캔 업로드" | 보관 기간이나 올리는 저장소가 바뀔 때 |
 | Redis | ElastiCache 가 아니라 클러스터 안 StatefulSet. Terraform 에 없다. 클러스터를 매일 지우므로 장애 큐 데이터가 그때 사라지는 것을 받아들인다 | 큐 데이터를 하루 넘게 보존해야 할 때 ElastiCache 나 10-base 의 영속 저장소를 검토한다 |
 | DB 서브넷 | RDS 는 DB 전용 서브넷 2a, 2c 에 둔다. 라우팅 테이블에 기본 경로가 없어 NAT 나 IGW 로 나갈 수 없다. 노드 서브넷과 RDS 보안 그룹(노드에서 오는 5432)은 그대로다 | RDS 가 외부(예: S3 내보내기)에 닿아야 할 때 VPC endpoint 를 DB 라우팅 테이블에 더한다 |

@@ -1,0 +1,52 @@
+# 프론트엔드(Next standalone). /api 프록시 주소(http://api.maemusae.svc:8000)는 이미지를 빌드할 때 고정된다 (SERVICE #5, #6)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: web
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector:
+        role: app
+      tolerations:
+        - { key: role, operator: Equal, value: app, effect: NoSchedule }
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: web
+          image: {{ required "gitops/apps/images.yaml 에 web 이 없다" .Values.web }}
+          ports:
+            - { name: http, containerPort: 3000 }
+          readinessProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+spec:
+  selector:
+    app.kubernetes.io/name: web
+  ports:
+    - { name: http, port: 3000, targetPort: http }

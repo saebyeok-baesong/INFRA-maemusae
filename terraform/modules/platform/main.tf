@@ -44,6 +44,33 @@ resource "helm_release" "external_secrets" {
   depends_on = [helm_release.aws_load_balancer_controller]
 }
 
+# app-of-apps 의 root. gitops/apps/ 의 Application 을 Argo CD 가 읽어 나머지를 설치한다
+resource "helm_release" "argocd_apps" {
+  name       = "argocd-apps"
+  namespace  = helm_release.argocd.namespace
+  repository = "https://argoproj.github.io/argo-helm"
+  chart      = "argocd-apps"
+  version    = var.chart_versions.argocd_apps
+
+  values = [yamlencode({
+    applications = {
+      root = {
+        namespace = "argocd"
+        project   = "default"
+        source = {
+          repoURL        = var.gitops_repo_url
+          targetRevision = "main"
+          path           = "gitops/apps"
+          # images.yaml 은 매니페스트가 아니라 앱 Helm values 다 (SPEC contracts/images-yaml.md)
+          directory = { exclude = "images.yaml" }
+        }
+        destination = { server = "https://kubernetes.default.svc", namespace = "argocd" }
+        syncPolicy  = { automated = { prune = true, selfHeal = true } }
+      }
+    }
+  })]
+}
+
 resource "helm_release" "external_dns" {
   count = local.externaldns == null ? 0 : 1
 
