@@ -1,0 +1,5 @@
+# 보안 경로는 보안 담당(TL-cg11) 리뷰를 받는다
+/iam/ @TL-cg11
+/gitops/security/ @TL-cg11
+/gitops/apps/images.yaml @TL-cg11
+/.github/ @TL-cg11
