@@ -1,6 +1,0 @@
-* @saebyeok-baesong/infra
-/gitops/security/ @saebyeok-baesong/security
-/iam/ @saebyeok-baesong/security @saebyeok-baesong/infra
-# 롤백 App 은 ruleset 우회로 이 파일을 리뷰 없이 바꾼다. 사람 PR 은 infra 나 보안팀이 본다
-/gitops/apps/images.yaml @saebyeok-baesong/infra @saebyeok-baesong/security
-/.github/ @saebyeok-baesong/infra @saebyeok-baesong/security
